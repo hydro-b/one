@@ -24,6 +24,25 @@ domain=$1
 mkdir -p `dirname $domain`
 cat > $domain
 
+# activate LVM devices 
+DST_PATH=$(dirname "${domain}")
+for disk in $(ls ${DST_PATH}/disk.*); do
+    DEVICE=$(readlink "${disk}" 2>/dev/null)
+
+    # disk symlink resolves and target file/device doesn't
+    # exist yet, but lvs knows about it -> activate
+    if [ -n "${DEVICE}" ] && ! [ -e "${DEVICE}" ]; then
+        if ${SUDO} ${LVS} "${DEVICE}" >/dev/null 2>&1; then
+            ${SUDO} ${LVCHANGE} -ay "${DEVICE}" >/dev/null
+
+            if [ $? -ne 0 ]; then
+                error_message "Failed to activate LVM device ${DEVICE}"
+                exit -1
+            fi
+        fi
+    fi
+done
+
 data=`virsh --connect $LIBVIRT_URI create $domain`
 
 if [ "x$?" = "x0" ]; then
