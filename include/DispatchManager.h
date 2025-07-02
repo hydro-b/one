@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -75,16 +75,6 @@ public:
      */
     int deploy(std::unique_ptr<VirtualMachine> vm,
                const RequestAttributes& request);
-
-    /**
-     *  Sets an imported VM to RUNNING state, a history record MUST be added,
-     *  and the VM MUST be locked.
-     *    @param vm pointer to a VirtualMachine with its mutex locked.
-     *    @param ra information about the API call request
-     *    @return 0 on success
-     */
-    int import(std::unique_ptr<VirtualMachine> vm,
-               const RequestAttributes& ra);
 
     /**
      *  Migrates a VM. The following actions must be performed before calling
@@ -540,7 +530,7 @@ public:
      *
      *  @return 0 on success, -1 otherwise
      */
-    int resize(int vid, float cpu, int vcpu, long memory,
+    int resize(int vid, float cpu, int vcpu, long memory, bool enforce,
                const RequestAttributes& ra, std::string& error_str);
 
     /**

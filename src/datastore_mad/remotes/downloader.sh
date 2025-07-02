@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -424,22 +424,28 @@ s3://*)
 rbd://*)
     command="$(get_rbd_cmd "$FROM")"
     ;;
-vcenter://*)
-    command="$VAR_LOCATION/remotes/datastore/vcenter_downloader.rb '$(esc_sq "$FROM")'"
-    ;;
 lxd://*)
     file_type="application/octet-stream"
     command="$VAR_LOCATION/remotes/datastore/lxd_downloader.sh \"$FROM\""
     ;;
-docker://*|dockerfile://*)
-    file_type="application/octet-stream"
-    command="$VAR_LOCATION/remotes/datastore/docker_downloader.sh \"$FROM\""
+restic://*|restic+rbd://*)
+    defs=`$VAR_LOCATION/remotes/datastore/restic_downloader.rb "$FROM" | grep -e '^command=' -e '^clean_command='`
+    ret=$?
+    [ $ret -ne 0 ] && exit $ret
+    eval "$defs"
     ;;
-restic://*)
-    eval `$VAR_LOCATION/remotes/datastore/restic_downloader.rb "$FROM" | grep -e '^command=' -e '^clean_command='`
+rsync://*|rsync+rbd://*)
+    defs=`$VAR_LOCATION/remotes/datastore/rsync_downloader.rb "$FROM" | grep -e '^command=' -e '^clean_command='`
+    ret=$?
+    [ $ret -ne 0 ] && exit $ret
+    eval "$defs"
     ;;
-rsync://*)
-    eval `$VAR_LOCATION/remotes/datastore/rsync_downloader.rb "$FROM" | grep -e '^command=' -e '^clean_command='`
+netapp://*)
+    # netapp:///vol/one-101-234/one-123-disk-0 ?
+    defs=`$VAR_LOCATION/remotes/datastore/netapp_downloader.rb "$FROM" | grep -e '^command=' -e '^clean_command='`
+    ret=$?
+    [ $ret -ne 0 ] && exit $ret
+    eval "$defs"
     ;;
 *)
     if [ ! -r $FROM ]; then

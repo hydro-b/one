@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -781,7 +781,7 @@ public class VirtualNetwork extends PoolElement{
     /**
      * Returns the state of the Virtual Network.
      * <br>
-     * The method {@link VirtualNetowrk#info()} must be called before.
+     * The method {@link VirtualNetwork#info()} must be called before.
      *
      * @return The state of the Virtual Network.
      */
@@ -794,7 +794,7 @@ public class VirtualNetwork extends PoolElement{
     /**
      * Returns the short string state of the Virtual Network.
      * <br>
-     * The method {@link VirtualNetowrk#info()} must be called before.
+     * The method {@link VirtualNetwork#info()} must be called before.
      *
      * @return The short string state of the Virtual Network.
      */

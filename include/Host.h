@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -21,6 +21,7 @@
 #include "HostTemplate.h"
 #include "HostMonitoringTemplate.h"
 #include "HostShare.h"
+#include "Cluster.h"
 #include "ClusterableSingle.h"
 #include "ObjectCollection.h"
 #include "NebulaLog.h"
@@ -139,12 +140,6 @@ public:
     int from_xml(const std::string &xml_str) override;
 
     /**
-     *  Checks if the host is a remote public cloud
-     *    @return true if the host is a remote public cloud
-     */
-    bool is_public_cloud() const;
-
-    /**
      *   Sets the current host offline, it will not be monitored nor used by the
      *   scheduler, manual VM deployment is also restricted
      */
@@ -245,25 +240,9 @@ public:
      *    @param sr the capacity request of the VM
      *    @return 0 on success
      */
-    void add_capacity(HostShareCapacity &sr)
-    {
-        if ( vm_collection.add(sr.vmid) == 0 )
-        {
-            host_share.add(sr);
-        }
-        else
-        {
-            std::ostringstream oss;
-            oss << "VM " << sr.vmid << " is already in host " << oid << ".";
+    void add_capacity(HostShareCapacity &sr);
 
-            NebulaLog::log("ONE", Log::ERROR, oss);
-        }
-    };
-
-    bool add_pci(HostShareCapacity &sr)
-    {
-        return host_share.add_pci(sr);
-    }
+    bool add_pci(HostShareCapacity &sr);
 
     /**
      *  Deletes a new VM to the host share by incrementing usage counters
@@ -306,9 +285,9 @@ public:
      *
      *    @return true if the share can host the VM
      */
-    bool test_capacity(HostShareCapacity &sr, std::string& error)
+    bool test_capacity(HostShareCapacity &sr, std::string& error, bool enforce)
     {
-        return host_share.test(sr, error);
+        return host_share.test(sr, error, enforce);
     }
 
     /**
@@ -341,15 +320,52 @@ public:
      *  Executed after an update operation to process the new template
      *    - encrypt secret attributes.
      */
-    int post_update_template(std::string& error) override;
+    int post_update_template(std::string& error, Template *_old_tmpl) override;
 
     /**
      *  Read monitoring from DB
      */
     void load_monitoring();
 
+    /**
+     *  Return host montioring information
+     */
+    const HostMonitoringTemplate& get_monitoring() const
+    {
+        return monitoring;
+    }
+
     void update_zombies(const std::set<int>& ids);
 
+    /**
+     *  Search the Object for a given attribute in a set of object specific
+     *  routes.
+     *    @param name of the attribute
+     *    @param value of the attribute
+     *
+     *    @return -1 if the element was not found
+     */
+    int search(const char *name, std::string& value) override
+    {
+        return __search(name, value);
+    }
+
+    int search(const char *name, int& value) override
+    {
+        return __search(name, value);
+    }
+
+    int search(const char *name, float& value) override
+    {
+        return __search(name, value);
+    }
+
+    void cluster_template(const std::string& e)
+    {
+        cluster_template_xml = e;
+    }
+
+    bool is_pinned() const;
 private:
     friend class HostPool;
 
@@ -380,6 +396,18 @@ private:
      */
     HostMonitoringTemplate monitoring;
 
+    /**
+     *  Extra template attributes. Added to the Host <TEMPLATE> element in the
+     *  to_xml method
+     */
+    std::string cluster_template_xml;
+
+
+    /**
+     * Cached value of the Cluster object
+     */
+    mutable std::unique_ptr<Cluster> cluster_obj;
+
     // *************************************************************************
     // Constructor
     // *************************************************************************
@@ -399,7 +427,56 @@ private:
      */
     void reserved_capacity(std::string& rcpu, std::string& rmem) const;
 
+    /**
+     *  Gets a host template attribute, if not defined it look for it in the
+     *  cluster template.
+     *    @param name of the attribute
+     *    @param value of the attribute
+     */
+    void get_hostcluster_attr(const std::string& name, std::string& value) const;
+
     void update_wilds();
+
+    Cluster* get_cluster() const;
+
+    /* ---------------------------------------------------------------------- */
+    /* Functions to search for values in the HostXML object                   */
+    /* ---------------------------------------------------------------------- */
+    /**
+     *  Search the Object for a given attribute in a set of object specific
+     *  routes. Override ObjectXML function to deal with pseudo-attributes
+     *    - CURRENT_VMS. value is the VM ID to search in the set of VMS
+     *    running VMs in the host. If the VM_ID is found value is not modified
+     *    otherwise is set to -1
+     */
+    template<typename T>
+    int __search(const char *name, T& value)
+    {
+        std::string s_name(name);
+
+        if (s_name == "CURRENT_VMS")
+        {
+            std::vector<T> results;
+
+            xpaths(results, "/HOST/VMS/ID");
+
+            for (const auto& vm_id : results)
+            {
+                if (vm_id == value)
+                {
+                    return 0; //VMID found in VMS value is VMID
+                }
+            }
+
+            value = -1; //VMID not found in VMS value is -1
+
+            return 0;
+        }
+        else
+        {
+            return ObjectXML::search(name, value);
+        }
+    }
 
     // *************************************************************************
     // DataBase implementation (Private)

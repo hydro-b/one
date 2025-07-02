@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -70,16 +70,6 @@ namespace one_db
 
     extern const char * vm_template_table;
 
-    // -------------------------------------------------------------------------
-    // Virtual Machine ID - Deploy ID index for imported VMs
-    // The index is managed by the VirtualMachinePool
-    // -------------------------------------------------------------------------
-    extern const char * vm_import_table;
-
-    extern const char * vm_import_db_names;
-
-    extern const char * vm_import_db_bootstrap;
-
     /* ---------------------------------------------------------------------- */
     /* Cluster tables                                                         */
     /* ---------------------------------------------------------------------- */
@@ -96,6 +86,13 @@ namespace one_db
     extern const char * cluster_network_db_bootstrap;
 
     extern const char * cluster_bitmap_table;
+
+    /* ---------------------------------------------------------------------- */
+    /* Plan tables                                                         */
+    /* ---------------------------------------------------------------------- */
+    extern const char * plan_table;
+    extern const char * plan_db_names;
+    extern const char * plan_db_bootstrap;
 
     /* ---------------------------------------------------------------------- */
     /* ACL tables                                                             */

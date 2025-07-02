@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -22,6 +22,9 @@
 #include "ClusterPool.h"
 #include "DatastorePool.h"
 #include "VirtualNetworkPool.h"
+
+class PlanPool;
+class PlanManager;
 
 /* ------------------------------------------------------------------------- */
 /* ------------------------------------------------------------------------- */
@@ -355,8 +358,77 @@ public:
     }
 };
 
-/* -------------------------------------------------------------------------- */
-/* -------------------------------------------------------------------------- */
-/* -------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+
+class RequestManagerPlan: public Request
+{
+protected:
+    RequestManagerPlan(const std::string& method_name,
+                       const std::string& help,
+                       const std::string& params)
+        : Request(method_name, params, help)
+    {
+        Nebula& nd = Nebula::instance();
+        clpool     = nd.get_clpool();
+        plpool     = nd.get_planpool();
+        planm      = nd.get_planm();
+
+        auth_object = PoolObjectSQL::CLUSTER;
+        auth_op     = AuthRequest::ADMIN;
+    }
+
+    ClusterPool *clpool;
+    PlanPool    *plpool;
+    PlanManager *planm;
+};
+
+/* ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+
+class ClusterOptimize : public RequestManagerPlan
+{
+public:
+    ClusterOptimize()
+        : RequestManagerPlan("one.cluster.optimize",
+                             "Create an optimization plan for Cluster",
+                             "A:si")
+    {}
+
+    void request_execute(xmlrpc_c::paramList const& paramList,
+                         RequestAttributes& att) override;
+};
+
+/* ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+
+class ClusterPlanExecute : public RequestManagerPlan
+{
+public:
+    ClusterPlanExecute()
+        : RequestManagerPlan("one.cluster.planexecute",
+                             "Start execution of optimization plan",
+                             "A:si")
+    {}
+
+    void request_execute(xmlrpc_c::paramList const& paramList,
+                         RequestAttributes& att) override;
+};
+
+/* ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+
+class ClusterPlanDelete : public RequestManagerPlan
+{
+public:
+    ClusterPlanDelete()
+        : RequestManagerPlan("one.cluster.plandelete",
+                             "Deletes an optimization plan",
+                             "A:si")
+    {}
+
+    void request_execute(xmlrpc_c::paramList const& paramList,
+                         RequestAttributes& att) override;
+};
 
 #endif

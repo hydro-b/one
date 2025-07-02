@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -85,7 +85,7 @@ public:
     // -------------------------------------------------------------------------
     void start_prolog_migrate(VirtualMachine* vm);
 
-    void revert_migrate_after_failure(VirtualMachine* vm);
+    void revert_migrate_after_failure(VirtualMachine* vm, bool live);
 
     void trigger_save_success(int vid);
     void trigger_save_failure(int vid);

@@ -1,7 +1,7 @@
 #!/usr/bin/ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -58,7 +58,11 @@ class Qcow2Mapper
 
     # Returns the source file for the disk
     def source(disk)
-        "#{disk.sysds_path}/#{disk.vm_id}/disk.#{disk.id}"
+        disk_source = "#{disk.sysds_path}/#{disk.vm_id}/disk.#{disk.id}"
+
+        return File.realpath(disk_source) if File.symlink?(disk_source)
+
+        disk_source
     end
 
     # TODO, check if necessary

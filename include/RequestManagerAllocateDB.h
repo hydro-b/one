@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -47,9 +47,9 @@ protected:
             return;
         }
 
-        PoolObjectSQL * obj = create(xml);
+        auto obj = std::unique_ptr<PoolObjectSQL>(create(xml));
 
-        int rc = pool->allocate(obj, att.resp_msg);
+        int rc = pool->allocate(*obj, att.resp_msg);
 
         if (  rc == -1 )
         {

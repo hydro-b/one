@@ -10,9 +10,6 @@ share/install_gems/Gemfile.lock
 share/man/*
 !share/man/build.sh
 src/im_mad/collectd/collectd
-src/scheduler/src/sched/.xmlrpc_test/
-src/scheduler/src/sched/mm_sched
-src/sunstone/locale/languages/*.js
 src/mad/utils/tty_expect
 src/nebula/.xmlrpc_test/
 src/nebula/oned
@@ -21,6 +18,9 @@ share/doc/one/html
 src/svncterm_server/genfont
 src/svncterm_server/svncterm_server
 src/im_mad/remotes/status.db
+
+src/schedm_mad/remotes/rank/src/sched/place
+src/schedm_mad/remotes/one_drs/vendor/lib/
 
 *.class
 src/oca/java/bin
@@ -39,14 +39,6 @@ src/docker_machine/pkg
 src/docker_machine/src/docker_machine/bin/docker-machine-driver-opennebula
 src/docker_machine/src/docker_machine/vendor/
 
-src/sunstone/public/.sass-cache
-src/sunstone/public/node_modules
-src/sunstone/public/bower_components
-src/sunstone/public/css/app.css
-src/sunstone/public/css/app.min.css
-src/sunstone/public/dist/
-src/sunstone/public/locale/languages/*.js
-src/sunstone/public/package-lock.json
 .tx/config
 
 src/fireedge/node_modules
@@ -58,13 +50,6 @@ src/fireedge/.DS_Store
 src/fireedge/cypress/screenshots
 src/fireedge/yarn.lock
 
-src/onedb/local/
-src/onedb/shared/
-
-# Enterprise part of onecfg
-src/onecfg/lib/ee.rb
-src/onecfg/lib/ee/
-src/onecfg/share/migrators/
 
 share/esx-fw-vnc/*.rpm
 share/esx-fw-vnc/.vagrant*
@@ -81,3 +66,12 @@ share/context/*
 
 # backups
 *.*-
+
+# vendor
+src/datastore_mad/remotes/restic/vendor/bin/
+src/oneprometheus/vendor/alertmanager.arm64/
+src/oneprometheus/vendor/alertmanager/
+src/oneprometheus/vendor/node_exporter.arm64/
+src/oneprometheus/vendor/node_exporter/
+src/oneprometheus/vendor/prometheus.arm64/
+src/oneprometheus/vendor/prometheus/

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -14,8 +14,10 @@
 # limitations under the License.                                             #
 #--------------------------------------------------------------------------- #
 
-require 'shellwords'
+require 'json'
 require 'open3'
+require 'resolv'
+require 'shellwords'
 
 require_relative 'vf'
 
@@ -25,6 +27,7 @@ require_relative 'vf'
 #   - VNMNetwork with base classes and main functionality to manage Virtual Nets
 #   - SGIPTables a module with a SG implementation based in iptables/ipset
 ################################################################################
+# rubocop:disable Naming/VariableNumber
 module VNMMAD
 
     ############################################################################
@@ -42,7 +45,7 @@ module VNMMAD
         #   @param xpath_filter [String] to get relevant NICs for the driver
         #   @param deploy_id [String]
         def initialize(vm_tpl, xpath_filter, deploy_id = nil)
-            @locking ||= false
+            @locking = false
 
             @vm = VNMNetwork::VM.new(REXML::Document.new(vm_tpl).root,
                                      xpath_filter, deploy_id)
@@ -223,13 +226,32 @@ module VNMMAD
         def create_bridge(nic)
             return if @bridges.key?(nic[:bridge])
 
-            OpenNebula.exec_and_log("#{command(:ip)} link add name " \
-                "#{nic[:bridge]} type bridge #{list_bridge_options(nic)}", nil, 2)
+            LocalCommand.run_sh("#{command(:ip)} link add name " \
+                "'#{nic[:bridge]}' type bridge #{list_bridge_options(nic)}", :ok_rcs => 2)
 
             @bridges[nic[:bridge]] = []
 
-            OpenNebula.exec_and_log("#{command(:ip)} " \
-                                    "link set #{nic[:bridge]} up")
+            LocalCommand.run_sh("#{command(:ip)} " \
+                                    "link set '#{nic[:bridge]}' up")
+        end
+
+        # Deletes all vlan filters on bridge ports (VLAN range, 12bits 1-4094)
+        # VLAN 1 is preserved as it is configured by default.
+        def clean_vlan_filters(nic)
+            @bridges[nic[:bridge]].each do |dev|
+                LocalCommand.run_sh("#{command(:bridge)} vlan del dev #{dev}"\
+                            ' vid 2-4094', :ok_rcs => 2)
+            end
+        end
+
+        def set_vlan_filter(dev, pvid, vlans)
+            LocalCommand.run_sh("#{command(:bridge)} vlan add dev #{dev}"\
+                " vid #{pvid} pvid untagged", :ok_rcs => 2) if pvid
+
+            vlans.each do |vid|
+                LocalCommand.run_sh("#{command(:bridge)} vlan add dev #{dev}"\
+                    " vid #{vid}", :ok_rcs => 2)
+            end
         end
 
         # Reads config and return str with switches
@@ -281,8 +303,6 @@ module VNMMAD
             bridge_options_str.strip
         end
 
-
-
         # Returns a filter object based on the contents of the template
         #
         # @return SGDriver object
@@ -330,7 +350,7 @@ module VNMMAD
             return 0 if Dir["#{dir}/*"].empty?
 
             programs(dir).each do |file|
-                OpenNebula.log "Running #{file}"
+                OpenNebula::DriverLogger.log "Running #{file}"
 
                 cmd = "#{file} #{args.join(' ')}"
 
@@ -338,7 +358,7 @@ module VNMMAD
 
                 raise "Error running #{file}\n#{e}" unless s.exitstatus.zero?
 
-                OpenNebula.log o
+                OpenNebula::DriverLogger.log o
             end
 
             0
@@ -376,3 +396,4 @@ module VNMMAD
     end
 
 end
+# rubocop:enable Naming/VariableNumber

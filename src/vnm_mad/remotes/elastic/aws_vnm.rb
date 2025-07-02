@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -27,23 +27,7 @@ else
 end
 
 # %%RUBYGEMS_SETUP_BEGIN%%
-if File.directory?(GEMS_LOCATION)
-    real_gems_path = File.realpath(GEMS_LOCATION)
-    if !defined?(Gem) || Gem.path != [real_gems_path]
-        $LOAD_PATH.reject! {|l| l =~ /vendor_ruby/ }
-
-        # Suppress warnings from Rubygems
-        # https://github.com/OpenNebula/one/issues/5379
-        begin
-            verb = $VERBOSE
-            $VERBOSE = nil
-            require 'rubygems'
-            Gem.use_paths(real_gems_path)
-        ensure
-            $VERBOSE = verb
-        end
-    end
-end
+require 'load_opennebula_paths'
 # %%RUBYGEMS_SETUP_END%%
 
 $LOAD_PATH << LIB_LOCATION + '/oneprovision/lib'
@@ -77,14 +61,15 @@ class AWSProvider
     #   @return 0 on success, 1 on error
     def assign(ip, _external, opts = {})
         instcs = @ec2.describe_instances({ :instance_ids => [@deploy_id] })
-        inst   = instcs[0][0].instances[0]
+        inst   = instcs.reservations[0].instances[0]
 
         # find NIC to which the IP belongs (avoid Ceph network)
         nic_id = nil
         inst.network_interfaces.each do |ec2_nic|
             ec2_subnet = @ec2.describe_subnets(
                 { :subnet_ids => [ec2_nic.subnet_id] }
-            )[0][0]
+            ).subnets[0]
+
             ip_range = IPAddr.new(ec2_subnet.cidr_block)
 
             if ip_range.include?(ip)
@@ -104,13 +89,13 @@ class AWSProvider
                   :private_ip_address   => ip }
             )
         else
-            OpenNebula.log_error("Can not find any interface to assign #{ip}")
+            OpenNebula::DriverLogger.log_error("Can not find any interface to assign #{ip}")
             exit 1
         end
 
         0
     rescue StandardError => e
-        OpenNebula.log_error("Error assigning #{ip}:#{e.message}")
+        OpenNebula::DriverLogger.log_error("Error assigning #{ip}:#{e.message}")
         1
     end
 
@@ -133,7 +118,7 @@ class AWSProvider
               :private_ip_addresses => [aws_ip.private_ip_address] }
         )
     rescue StandardError
-        OpenNebula.log_error("Error unassigning #{ip}:#{e.message}")
+        OpenNebula::DriverLogger.log_error("Error unassigning #{ip}:#{e.message}")
     end
 
 end

@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -25,13 +25,12 @@ import {
   ENDPOINTS as COMMON_ENDPOINTS,
 } from 'client/router/common'
 
-import { ProtectedRoute, NoAuthRoute } from 'client/components/Route'
-import { InternalLayout } from 'client/components/HOC'
+import { ProtectedRoute, NoAuthRoute, InternalLayout } from '@ComponentsModule'
 
 const renderRoute = ({ Component, ...route }) => (
   <ProtectedRoute key={route.path} exact {...route}>
     <InternalLayout {...route}>
-      <Component fallback={<LinearProgress color="secondary" />} />
+      <Component fallback={<LinearProgress />} />
     </InternalLayout>
   </ProtectedRoute>
 )

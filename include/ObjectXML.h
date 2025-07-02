@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -37,12 +37,7 @@ public:
 
     // ---------------------- Constructors ------------------------------------
 
-    ObjectXML()
-        : paths(nullptr)
-        , num_paths(0)
-        , xml(nullptr)
-        , ctx(nullptr)
-    {}
+    ObjectXML(): xml(nullptr) , ctx(nullptr) {};
 
     /**
      *  Constructs an object using a XML document
@@ -86,7 +81,7 @@ public:
             case XPATH_NODESET:
                 if (obj->nodesetval == 0)
                 {
-                    return;
+                    break;
                 }
 
                 for (int i = 0; i < obj->nodesetval->nodeNr ; ++i)
@@ -211,7 +206,7 @@ public:
         {
             xpaths(results, name);
         }
-        else if (num_paths == 0)
+        else if (paths.empty())
         {
             results.clear();
         }
@@ -221,7 +216,7 @@ public:
 
             xpath << paths[0] << name;
 
-            for (int i = 1; i < num_paths ; i++)
+            for (size_t i = 1; i < paths.size() ; i++)
             {
                 xpath << '|' << paths[i] << name;
             }
@@ -375,12 +370,7 @@ protected:
     /**
      *  Array of paths to look for attributes in search methods
      */
-    const char **paths;
-
-    /**
-     *  Number of elements in paths array
-     */
-    int num_paths;
+    std::vector<std::string> paths;
 
 private:
     /**

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -24,66 +24,27 @@ require 'time'
 class OneHostHelper < OpenNebulaHelper::OneHelper
 
     TEMPLATE_XPATH = '//HOST/TEMPLATE'
-    HYBRID = {
-        :ec2 => {
-            :help => <<-EOT.unindent
-                #-----------------------------------------------------------------------
-                # Supported EC2 AUTH ATTRIBUTTES:
-                #
-                #  REGION_NAME = <the name of the ec2 region>
-                #
-                #  EC2_ACCESS = <Your ec2 access key id>
-                #  EC2_SECRET = <Your ec2 secret key>
-                #
-                #  CAPACITY = [
-                #    M1_SMALL  = <number of machines m1.small>,
-                #    M1_XLARGE = <number of machines m1.xlarge>,
-                #    M1_LARGE  = <number of machines m1.large>
-                #  ]
-                #
-                # You can set any machine type supported by ec2
-                # See your ec2_driver.conf for more information
-                #
-                #-----------------------------------------------------------------------
-            EOT
-        },
-        :az => {
-            :help => <<-EOT.unindent
-                #-----------------------------------------------------------------------
-                # Mandatory AZURE ATTRIBUTTES:
-                #
-                # AZ_SUB    = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-                # AZ_CLIENT = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-                # AZ_SECRET = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-                # AZ_TENANT = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-                # AZ_REGION = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-                #
-                # CAPACITY=[
-                #   STANDARD_B1LS =<number of machines Standard_B1ls>,
-                #   STANDARD_A1_V2=<number of machines Standard_A1_v2>
-                # ]
-                #
-                # Optional AZURE ATTRIBUTES:
-                #
-                # AZ_RGROUP = ""
-                #
-                # You can set any machine type supported by azure
-                # See your az_driver.conf for more information
-                #
-                #-----------------------------------------------------------------------
-            EOT
-        }
-    }
-
     VERSION_XPATH = "#{TEMPLATE_XPATH}/VERSION"
 
     MONITORING = {
-        'FREE_CPU'    => 'CAPACITY',
-        'FREE_MEMORY' => 'CAPACITY',
-        'USED_CPU'    => 'CAPACITY',
-        'USED_MEMORY' => 'CAPACITY',
-        'NETRX'       => 'SYSTEM',
-        'NETTX'       => 'SYSTEM'
+        'FREE_CPU'              => 'CAPACITY',
+        'FREE_CPU_FORECAST'     => 'CAPACITY',
+        'FREE_CPU_FORECAST_FAR' => 'CAPACITY',
+        'FREE_MEMORY'              => 'CAPACITY',
+        'FREE_MEMORY_FORECAST'     => 'CAPACITY',
+        'FREE_MEMORY_FORECAST_FAR' => 'CAPACITY',
+        'USED_CPU'                 => 'CAPACITY',
+        'USED_CPU_FORECAST'        => 'CAPACITY',
+        'USED_CPU_FORECAST_FAR'    => 'CAPACITY',
+        'USED_MEMORY'              => 'CAPACITY',
+        'USED_MEMORY_FORECAST'     => 'CAPACITY',
+        'USED_MEMORY_FORECAST_FAR' => 'CAPACITY',
+        'NETRX'               => 'SYSTEM',
+        'NETRX_FORECAST'      => 'SYSTEM',
+        'NETRX_FORECAST_FAR'  => 'SYSTEM',
+        'NETTX'               => 'SYSTEM',
+        'NETTX_FORECAST'      => 'SYSTEM',
+        'NETTX_FORECAST_FARR' => 'SYSTEM'
     }
 
     def self.rname
@@ -232,16 +193,6 @@ class OneHostHelper < OpenNebulaHelper::OneHelper
         end
     end
 
-    def set_hybrid(type, path)
-        k = type.to_sym
-
-        return unless HYBRID.key?(k)
-
-        return OpenNebulaHelper.editor_input(HYBRID[k][:help]) if path.nil?
-
-        File.read(path)
-    end
-
     NUM_THREADS = 15
     def sync(host_ids, options)
         if Process.uid.zero? || Process.gid.zero?
@@ -303,17 +254,10 @@ class OneHostHelper < OpenNebulaHelper::OneHelper
                 next if host['CLUSTER_ID'].to_i != cluster_id
             end
 
-            vm_mad = host['VM_MAD'].downcase
             state = host['STATE']
-
-            # Skip this host from remote syncing if it's a PUBLIC_CLOUD host
-            next if host['TEMPLATE/PUBLIC_CLOUD'] == 'YES'
 
             # Skip this host from remote syncing if it's OFFLINE
             next if Host::HOST_STATES[state.to_i] == 'OFFLINE'
-
-            # Skip this host if it is a vCenter cluster
-            next if vm_mad == 'vcenter'
 
             host_version = host['TEMPLATE/VERSION']
 
@@ -432,9 +376,6 @@ class OneHostHelper < OpenNebulaHelper::OneHelper
 
             state = host['STATE']
 
-            # Skip this host from remote syncing if it's a PUBLIC_CLOUD host
-            next if host['TEMPLATE/PUBLIC_CLOUD'] == 'YES'
-
             # Skip this host from remote syncing if it's OFFLINE
             next if Host::HOST_STATES[state.to_i] == 'OFFLINE'
 
@@ -461,9 +402,6 @@ class OneHostHelper < OpenNebulaHelper::OneHelper
 
         # Different available size units
         units = ['K', 'M', 'G', 'T']
-
-        # Attrs that need units conversion
-        attrs = ['FREE_MEMORY', 'USED_MEMORY']
 
         if unit && !units.include?(unit)
             STDERR.puts "Invalid unit `#{unit}`"
@@ -507,7 +445,7 @@ class OneHostHelper < OpenNebulaHelper::OneHelper
         # Parse dcollected data
         x = monitoring_data.collect {|v| Time.at(v[0].to_i).strftime('%H:%M') }
         y = monitoring_data.collect do |v|
-            if attrs.include?(attr)
+            if attr.match(/_MEMORY/)
                 # GB is the default unit
                 v = OpenNebulaHelper.bytes_to_unit(v[1].to_i, unit).round(2)
                 "#{v} #{unit}B"
@@ -518,7 +456,7 @@ class OneHostHelper < OpenNebulaHelper::OneHelper
 
         title = ''
         title << "Host #{host.id} #{attr} "
-        title << "in #{unit}B " if unit && attrs.include?(attr)
+        title << "in #{unit}B " if unit && attr.match(/_MEMORY/)
         title << "from #{start_d} to #{end_d}"
 
         x = x.last(n_elems)
@@ -700,7 +638,7 @@ class OneHostHelper < OpenNebulaHelper::OneHelper
 
         format = '%-30.30s %36s %4s %10s'
         CLIHelper.print_header(format(format, 'NAME',
-                                      'IMPORT_ID', 'CPU', 'MEMORY'),
+                                      'DEPLOY_ID', 'CPU', 'MEMORY'),
                                true)
 
         wilds.each do |wild|
@@ -718,8 +656,9 @@ class OneHostHelper < OpenNebulaHelper::OneHelper
                              line[/CPU/]
                          end[0].split('=')[1].tr('"', ' ').strip
             else
-                name = wild['DEPLOY_ID']
-                import = memory = cpu = '-'
+                name = wild['VM_NAME']
+                import = wild['DEPLOY_ID']
+                memory = cpu = '-'
             end
 
             puts format(format, name, import, cpu, memory)
@@ -799,9 +738,12 @@ class OneHostHelper < OpenNebulaHelper::OneHelper
             node['MEMORY']['FREE'] = mon_node['MEMORY']['FREE']
             node['MEMORY']['USED'] = mon_node['MEMORY']['USED']
 
+            node['HUGEPAGE'] = [node['HUGEPAGE']].flatten.compact
+            mon_node['HUGEPAGE'] = [mon_node['HUGEPAGE']].flatten.compact
+
             node['HUGEPAGE'].each do |hp|
                 mon_hp = mon_node['HUGEPAGE'].find {|x| x['SIZE'] == hp['SIZE'] }
-                hp['FREE'] = mon_hp['FREE']
+                hp['FREE'] = mon_hp['FREE'] unless mon_hp.nil?
             end
         end
     end

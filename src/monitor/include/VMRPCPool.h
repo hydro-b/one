@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -57,13 +57,6 @@ public:
      *  Read last monitoring from DB
      */
     bool get_monitoring(int vmid, VirtualMachineMonitorInfo& vm);
-
-    /**
-     *  Gets a VM ID by its deploy_id
-     *    @param deploy_id to search the id for
-     *    @return -1 if not found or VMID
-     */
-    int get_vmid(const std::string& deploy_id);
 
 protected:
     void add_object(xmlNodePtr node) override

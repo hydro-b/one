@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -89,7 +89,7 @@ void FedReplicaManager::update_zones(std::vector<int>& zone_ids)
 
     int zone_id = nd.get_zone_id();
 
-    if ( zpool->list_zones(zone_ids) != 0 )
+    if ( zpool->list(zone_ids) != 0 )
     {
         return;
     }

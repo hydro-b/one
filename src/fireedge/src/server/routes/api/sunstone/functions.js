@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -101,14 +101,14 @@ const fillViewsInfo = (views, rtn) => {
  *
  * @param {object} res - http response
  * @param {Function} next - express stepper
- * @param {object} params - params of http request
+ * @param {object} _params - params of http request
  * @param {object} userData - user of http request
  * @param {Function} oneConnection - xmlrpc function
  */
 const getViews = (
   res = {},
   next = () => undefined,
-  params = {},
+  _params = {},
   userData = {},
   oneConnection = defaultEmptyFunction
 ) => {
@@ -139,11 +139,11 @@ const getViews = (
               // Check that the group has info
               if (vmgroupData && vmgroupData.GROUP && vmgroupData.GROUP.NAME) {
                 // Check if the user is admin of the group
-                const admins = Array.isArray(vmgroupData.GROUP.ADMINS)
-                  ? vmgroupData.GROUP.ADMINS
-                  : [vmgroupData.GROUP.ADMINS]
+                const admins = Array.isArray(vmgroupData.GROUP?.ADMINS?.ID)
+                  ? vmgroupData.GROUP.ADMINS?.ID
+                  : [vmgroupData.GROUP.ADMINS?.ID]
                 const isAdminGroup = admins.some(
-                  (admin) => admin.ID === dataUser.USER.ID
+                  (admin) => admin === dataUser.USER.ID
                 )
 
                 // Get the views on the group template
@@ -163,15 +163,15 @@ const getViews = (
                  * 3 -> Group template has not TEMPLATE.FIREEDGE.VIEWS and TEMPLATE.FIREEDGE.GROUP_ADMIN_VIEWS
                  */
 
+                // Create info views
+                const views = {}
+
                 if (
                   isAdminGroup &&
                   groupAdminViews &&
                   groupAdminViews.length > 0
                 ) {
                   // First case: Group template has TEMPLATE.FIREEDGE.GROUP_ADMIN_VIEWS and the user is admin of the group
-
-                  // Create info views
-                  const views = {}
 
                   // Fill info of each view reading the files on global.paths.SUNSTONE_PATH/{view name}
                   fillViewsInfo(groupAdminViews, views)
@@ -193,9 +193,6 @@ const getViews = (
                 // Check the views associated to the group
                 else if (groupViews && groupViews.length > 0) {
                   // Second case: Group template has TEMPLATE.FIREEDGE.VIEWS
-
-                  // Create info views
-                  const views = {}
 
                   // Fill info of each view reading the files on global.paths.SUNSTONE_PATH/{view name}
                   fillViewsInfo(groupViews, views)
@@ -231,9 +228,6 @@ const getViews = (
                         const groupViewsFile =
                           jsonFileData.groups[vmgroupData.GROUP.NAME] ||
                           jsonFileData.default
-
-                        // Create info views
-                        const views = {}
 
                         // Fill info of each view reading the files on global.paths.SUNSTONE_PATH/{view name}
                         fillViewsInfo(groupViewsFile, views)
@@ -274,14 +268,14 @@ const getViews = (
  *
  * @param {object} res - http response
  * @param {Function} next - express stepper
- * @param {object} params - params of http request
- * @param {object} userData - user of http request
+ * @param {object} _params - params of http request
+ * @param {object} _userData - user of http request
  */
 const getConfig = (
   res = {},
   next = defaultEmptyFunction,
-  params = {},
-  userData = {}
+  _params = {},
+  _userData = {}
 ) => {
   let error
 

@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------*/
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems             */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems             */
 /*                                                                         */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may */
 /* not use this file except in compliance with the License. You may obtain */
@@ -204,24 +204,23 @@ static void set_reserved_metric(long long& value, long long mvalue,
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
-void HostShare::set_monitorization(Template& ht, string& rcpu, string& rmem)
+void HostShare::set_monitorization(Template& ht, HostShareConf &conf)
 {
-    ht.get("TOTALCPU", total_cpu);
-    ht.erase("TOTALCPU");
-    set_reserved_metric(max_cpu, total_cpu, rcpu);
+    if (conf.total_cpu != -1)
+    {
+        total_cpu = conf.total_cpu;
+        set_reserved_metric(max_cpu, total_cpu, conf.rcpu);
+    }
 
-    ht.get("TOTALMEMORY", total_mem);
-    ht.erase("TOTALMEMORY");
-    set_reserved_metric(max_mem, total_mem, rmem);
+    if (conf.total_mem != -1)
+    {
+        total_mem = conf.total_mem;
+        set_reserved_metric(max_mem, total_mem, conf.rmem);
+    }
 
-    set_monitorization(ht);
-}
-
-void HostShare::set_monitorization(Template& ht)
-{
     ds.set_monitorization(ht);
 
-    pci.set_monitorization(ht);
+    pci.set_monitorization(ht, conf);
 
     numa.set_monitorization(ht, vms_thread);
 }
@@ -344,7 +343,7 @@ void HostShare::add(HostShareCapacity &sr)
 
     ds.add(sr);
 
-    pci.add(sr.pci, sr.vmid);
+    pci.add(sr);
 
     numa.add(sr);
 
@@ -360,7 +359,7 @@ void HostShare::del(HostShareCapacity &sr)
 
     ds.del(sr);
 
-    pci.del(sr.pci, sr.vmid);
+    pci.del(sr);
 
     numa.del(sr);
 
@@ -376,9 +375,9 @@ void HostShare::revert_pci(HostShareCapacity &sr)
 
 /* -------------------------------------------------------------------------- */
 
-bool HostShare::test(HostShareCapacity& sr, string& error) const
+bool HostShare::test(HostShareCapacity& sr, string& error, bool enforce) const
 {
-    if ( !test_compute(sr.cpu, sr.mem, error) )
+    if ( enforce && !test_compute(sr.cpu, sr.mem, error) )
     {
         return false;
     }

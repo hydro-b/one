@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -114,7 +114,7 @@ public:
      *    @param username
      *    @return a pointer to the User, 0 if the User could not be loaded
      */
-    std::unique_ptr<User> get(std::string name)
+    std::unique_ptr<User> get(const std::string& name)
     {
         // The owner is set to -1, because it is not used in the key() method
         auto u = PoolSQL::get<User>(name, -1);
@@ -133,7 +133,7 @@ public:
      *    @param username
      *    @return a pointer to the User, 0 if the User could not be loaded
      */
-    std::unique_ptr<User> get_ro(std::string name)
+    std::unique_ptr<User> get_ro(const std::string& name)
     {
         // The owner is set to -1, because it is not used in the key() method
         auto u = PoolSQL::get_ro<User>(name, -1);

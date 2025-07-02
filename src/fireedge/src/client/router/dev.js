@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -16,12 +16,18 @@
 import { Code as DevIcon } from 'iconoir-react'
 import loadable from '@loadable/component'
 
-const TestApi = loadable(() => import('client/containers/TestApi'), {
-  ssr: false,
-})
-const TestForm = loadable(() => import('client/containers/TestForm'), {
-  ssr: false,
-})
+const TestApi = loadable(
+  () => import('@ContainersModule').then((module) => module.TestApi),
+  {
+    ssr: false,
+  }
+)
+const TestForm = loadable(
+  () => import('@ContainersModule').then((module) => module.TestForm),
+  {
+    ssr: false,
+  }
+)
 
 export const PATH = {
   TEST_API: '/test-api',

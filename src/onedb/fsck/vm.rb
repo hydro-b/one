@@ -8,6 +8,7 @@ module OneDBFsck
         cluster_vnc = @data_vm[:vnc] = {}
 
         @vms_ports = {}
+        @vms_last_history = Hash.new
 
         # DATA: Aggregate information of the RUNNING vms
         @db.fetch("SELECT oid,body FROM vm_pool WHERE state<>6") do |row|
@@ -17,6 +18,10 @@ module OneDBFsck
 
             state     = vm_doc.root.at_xpath('STATE').text.to_i
             lcm_state = vm_doc.root.at_xpath('LCM_STATE').text.to_i
+
+            # Get last history record
+            seq = vm_doc.root.at_xpath('HISTORY_RECORDS/HISTORY[last()]/SEQ').text.to_i rescue nil
+            @vms_last_history[row[:oid]] = seq unless seq.nil?
 
             # DATA: VNC ports per cluster
             cid = vm_doc.root.at_xpath("HISTORY_RECORDS/HISTORY[last()]/CID").text.to_i rescue nil
@@ -42,7 +47,9 @@ module OneDBFsck
                 @vms_ports[port][cid] << vm_doc.root.at_xpath('ID').text.to_i
             end
 
-            fix_permissions('VM', row[:oid], vm_doc)
+            error = fix_permissions('VM', row[:oid], vm_doc)
+
+            vms_fix[row[:oid]] = vm_doc.root.to_s if error
 
             # DATA: Images used by this VM
             vm_doc.root.xpath("TEMPLATE/DISK/IMAGE_ID").each do |e|
@@ -186,10 +193,6 @@ module OneDBFsck
                     }
 
                     vms_fix[row[:oid]] = vm_doc.root.to_s
-                else
-                    @db[:vm_pool].where(
-                        :oid => row[:oid]
-                    ).update(:body => vm_doc.root.to_s)
                 end
 
                 # DATA: add resources to host counters
@@ -209,11 +212,15 @@ module OneDBFsck
                 hdoc.root.xpath("VMMMAD").each {|e|
                     e.name = "VM_MAD"
                     found = true
+
+                    log_error("VM #{row[:oid]} history #{hrow[:seq]} changing VMMMAD to VM_MAD")
                 }
 
                 hdoc.root.xpath("TMMAD").each  {|e|
                     e.name = "TM_MAD"
                     found = true
+
+                    log_error("VM #{row[:oid]} history #{hrow[:seq]} changing TMMAD to TM_MAD")
                 }
 
                 # DATA: translate VMMMAD and TMMAD to VM_MAD and TM_MAD

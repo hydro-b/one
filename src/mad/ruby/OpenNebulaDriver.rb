@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -100,7 +100,7 @@ class OpenNebulaDriver < ActionManager
 
         # if options[:is_local] is not specified (nil)
         # we rely uniquely in actions_is_local?
-        if action_is_local?(aname) or options[:is_local]
+        if action_is_local?(aname) || options[:is_local]
             stdin = Base64.strict_encode64(options[:stdin].to_s)
             execution = LocalCommand.run(command,
                                          log_method(id),

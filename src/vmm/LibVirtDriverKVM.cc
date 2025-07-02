@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -16,7 +16,6 @@
 
 #include "LibVirtDriver.h"
 
-#include "Nebula.h"
 #include "HostPool.h"
 #include "ClusterPool.h"
 #include "VirtualNetwork.h"
@@ -24,29 +23,23 @@
 #include "Nebula.h"
 #include "Image.h"
 #include "DatastorePool.h"
+#include "NebulaUtil.h"
 
+#include <regex>
+#include <exception>
 #include <sstream>
 #include <fstream>
 #include <libgen.h>
 #include <math.h>
+#include <iomanip>
 
 using namespace std;
-
-const int LibVirtDriver::CEPH_DEFAULT_PORT = 6789;
-
-const int LibVirtDriver::GLUSTER_DEFAULT_PORT = 24007;
-
-const int LibVirtDriver::ISCSI_DEFAULT_PORT = 3260;
-
-const int LibVirtDriver::Q35_ROOT_DEFAULT_PORTS = 16;
-
-const char * LibVirtDriver::XML_DOMAIN_RNG_PATH = "/schemas/libvirt/domain.rng";
 
 #define set_sec_default(v, dv) if (v.empty() && !dv.empty()){v = dv;}
 
 /**
- *  This function generates the <host> element for network disks
- */
+*  This function generates the <host> element for network disks
+*/
 static void do_network_hosts(ofstream& file,
                              const string& cg_host,
                              const string& transport,
@@ -98,66 +91,52 @@ static void do_network_hosts(ofstream& file,
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
-static int to_i(const string& sval)
+static int to_int(const string& s)
 {
-    int ival;
+    int val;
 
-    istringstream iss(sval);
+    istringstream iss(s);
 
-    iss >> ival;
+    iss >> val;
 
     if (iss.fail() || !iss.eof())
     {
         return -1;
     }
 
-    return ival;
+    return val;
 }
 
+template<typename T>
 static void insert_sec(ofstream& file, const string& base, const string& s,
                        const string& sm, const string& sml)
 {
-    int s_i = 0;
+    T s_i = 0;
 
     if (!s.empty())
     {
-        s_i = to_i(s);
+        s_i = one_util::string_to_unsigned<T>(s);
 
-        if (s_i < 0)
-        {
-            return;
-        }
-
-        file << "\t\t\t\t<" << base << "_sec>" << one_util::escape_xml(s)
+        file << "\t\t\t\t<" << base << "_sec>" << one_util::escape_xml(std::to_string(s_i))
              << "</" << base << "_sec>\n";
     }
 
     if (!sm.empty())
     {
-        int sm_i = to_i(sm);
+        const auto sm_i = one_util::string_to_unsigned<T>(sm);
 
-        if (sm_i < 0)
-        {
-            return;
-        }
-
-        if ( sm_i > s_i )
+        if ( sm_i > s_i)
         {
             file << "\t\t\t\t<" << base << "_sec_max>"
-                 << one_util::escape_xml(sm)
+                 << one_util::escape_xml(std::to_string(sm_i))
                  << "</" << base << "_sec_max>\n";
 
             if (!sml.empty())
             {
-                int sml_i = to_i(sml);
-
-                if (sml_i < 0)
-                {
-                    return;
-                }
+                const auto sml_i = one_util::string_to_unsigned<T>(sml);
 
                 file << "\t\t\t\t<" << base << "_sec_max_length>"
-                     << one_util::escape_xml(sml)
+                     << one_util::escape_xml(std::to_string(sml_i))
                      << "</" << base << "_sec_max_length>\n";
             }
         }
@@ -174,6 +153,7 @@ static void pin_cpu(ofstream& file, std::string& emulator_cpus,
 
     unsigned int vcpu_id = 0;
     int affinity = -1;
+    unsigned int hpsz = 0;
 
     std::ostringstream oss;
 
@@ -185,9 +165,10 @@ static void pin_cpu(ofstream& file, std::string& emulator_cpus,
         pp   = HostShare::str_to_pin_policy(pp_s);
 
         topology->vector_value("NODE_AFFINITY", affinity);
+        topology->vector_value("HUGEPAGE_SIZE", hpsz);
     }
 
-    if ( pp == HostShare::PP_NONE && affinity == -1)
+    if ( pp == HostShare::PP_NONE && affinity == -1 && hpsz == 0)
     {
         if (!emulator_cpus.empty())
         {
@@ -421,8 +402,10 @@ static void set_queues(string& queue, const string& vcpu)
     }
 }
 
+
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
+
 
 int LibVirtDriver::validate_raw(const string& raw_section, string& error) const
 {
@@ -463,7 +446,10 @@ int LibVirtDriver::validate_template(const VirtualMachine* vm, int hid,
 
     get_attribute(vm, nullptr, nullptr, "OS", "FIRMWARE", firmware);
 
-    if ( !firmware.empty() && !one_util::icasecmp(firmware, "BIOS") )
+    // Skip validation for BIOS (default) and auto (autoselection)
+    if ( !firmware.empty() &&
+         !one_util::icasecmp(firmware, "BIOS") &&
+         !one_util::icasecmp(firmware, "UEFI") )
     {
         string ovmf_uefis;
 
@@ -546,6 +532,7 @@ int LibVirtDriver::deployment_description_kvm(
     string discard;
     string source;
     string clone;
+    string serial;
     string blk_queues;
     string shareable;
     string ceph_host;
@@ -633,7 +620,8 @@ int LibVirtDriver::deployment_description_kvm(
     string o_peak_kb;
 
     string default_filter;
-    string default_model ;
+    string default_model;
+    string default_virtio_queues;
 
     const VectorAttribute * graphics;
 
@@ -652,6 +640,7 @@ int LibVirtDriver::deployment_description_kvm(
     string vm_bus;
     string vm_slot;
     string vm_func;
+    string vm_index;
 
     bool pae         = false;
     bool acpi        = false;
@@ -758,7 +747,7 @@ int LibVirtDriver::deployment_description_kvm(
     topology = vm->get_template_attribute("TOPOLOGY");
     vm->get_template_attribute("NUMA_NODE", nodes);
 
-    get_attribute(nullptr, host, nullptr, "CGROUPS_VERSION", cgversion);
+    get_attribute(nullptr, host, cluster, "CGROUPS_VERSION", cgversion);
 
     int  base = 1024;
     int  min  = 2;
@@ -844,7 +833,25 @@ int LibVirtDriver::deployment_description_kvm(
     //  OS and boot options
     // ------------------------------------------------------------------------
 
-    file << "\t<os>" << endl;
+    // Check if firmware is set to auto for autoselection
+    string firmware;
+    bool boot_secure = false;
+
+    get_attribute(vm, host, cluster, "OS", "FIRMWARE", firmware);
+
+    get_attribute(vm, host, cluster, "OS", "FIRMWARE_SECURE", boot_secure);
+
+    bool is_efi_auto = one_util::icasecmp(firmware, "UEFI");
+    bool is_uefi     = !firmware.empty() && !one_util::icasecmp(firmware, "BIOS") && !is_efi_auto;
+
+    if (is_efi_auto)
+    {
+        file << "\t<os firmware='efi'>" << endl;
+    }
+    else
+    {
+        file << "\t<os>" << endl;
+    }
 
     get_attribute(vm, host, cluster, "OS", "ARCH", arch);
     get_attribute(vm, host, cluster, "OS", "MACHINE", machine);
@@ -898,19 +905,27 @@ int LibVirtDriver::deployment_description_kvm(
              << "</bootloader>\n";
     }
 
-    bool boot_secure = false;
-    string firmware;
+    if ( is_efi_auto )
+    {
+        // Check if secure boot is enabled
+        file << "\t\t<firmware>\n";
 
-    get_attribute(vm, nullptr, nullptr, "OS", "FIRMWARE", firmware);
+        if (boot_secure)
+        {
+            file << "\t\t\t<feature enabled='yes' name='secure-boot'/>\n";
+        }
+        else
+        {
+            file << "\t\t\t<feature enabled='no' name='secure-boot'/>\n";
+        }
 
-    bool is_uefi = !firmware.empty() && !one_util::icasecmp(firmware, "BIOS");
-
-    if ( is_uefi )
+        file << "\t\t</firmware>\n";
+    }
+    else if ( is_uefi )
     {
         string firmware_secure = "no";
 
-        if ( get_attribute(vm, nullptr, nullptr, "OS", "FIRMWARE_SECURE",
-                           boot_secure) && boot_secure)
+        if (boot_secure)
         {
             firmware_secure = "yes";
         }
@@ -988,7 +1003,7 @@ int LibVirtDriver::deployment_description_kvm(
 
         if (nodes.empty() && memory_hotplug)
         {
-            int cpus = to_i(vcpu) - 1;
+            int cpus = to_int(vcpu) - 1;
             if (cpus < 0)
             {
                 cpus = 0;
@@ -1108,6 +1123,7 @@ int LibVirtDriver::deployment_description_kvm(
         discard   = disk[i]->vector_value("DISCARD");
         source    = disk[i]->vector_value("SOURCE");
         clone     = disk[i]->vector_value("CLONE");
+        serial    = disk[i]->vector_value("SERIAL");
         blk_queues= disk[i]->vector_value("VIRTIO_BLK_QUEUES");
         shareable = disk[i]->vector_value("SHAREABLE");
 
@@ -1435,6 +1451,20 @@ int LibVirtDriver::deployment_description_kvm(
             file << "\t\t\t<shareable/>" << endl;
         }
 
+        // ---- serial attribute for the disk ----
+
+        if (!serial.empty())
+        {
+            if (type == "BLOCK" && disk_bus == "scsi")
+            {
+                vm->log("VMM", Log::WARNING, "Serial attribute ignored: not supported for SCSI block devices.");
+            }
+            else
+            {
+                file << "\t\t\t<serial>" << serial << "</serial>" << endl;
+            }
+        }
+
         // ---- Image Format using qemu driver ----
 
         file << "\t\t\t<driver name='qemu' type=";
@@ -1483,7 +1513,7 @@ int LibVirtDriver::deployment_description_kvm(
 
         if ( iothreads > 0 && disk_bus == "virtio" )
         {
-            int iothreadid_i = to_i(iothreadid);
+            int iothreadid_i = to_int(iothreadid);
             if (iothreadid_i > 0 && iothreadid_i <= iothreads)
             {
                 file << " iothread=" << one_util::escape_xml_attr(iothreadid_i);
@@ -1536,36 +1566,36 @@ int LibVirtDriver::deployment_description_kvm(
 
             if ( total_bytes_sec.empty() && total_bytes_sec_max.empty() )
             {
-                insert_sec(file, "read_bytes", read_bytes_sec,
-                           read_bytes_sec_max, read_bytes_sec_max_length);
+                insert_sec<unsigned long long>(file, "read_bytes", read_bytes_sec,
+                                               read_bytes_sec_max, read_bytes_sec_max_length);
 
-                insert_sec(file, "write_bytes", write_bytes_sec,
-                           write_bytes_sec_max, write_bytes_sec_max_length);
+                insert_sec<unsigned long long>(file, "write_bytes", write_bytes_sec,
+                                               write_bytes_sec_max, write_bytes_sec_max_length);
             }
             else
             {
-                insert_sec(file, "total_bytes", total_bytes_sec,
-                           total_bytes_sec_max, total_bytes_sec_max_length);
+                insert_sec<unsigned long long>(file, "total_bytes", total_bytes_sec,
+                                               total_bytes_sec_max, total_bytes_sec_max_length);
             }
 
             if ( total_iops_sec.empty() && total_iops_sec_max.empty() )
             {
-                insert_sec(file, "read_iops", read_iops_sec,
-                           read_iops_sec_max, read_iops_sec_max_length);
+                insert_sec<unsigned int>(file, "read_iops", read_iops_sec,
+                                         read_iops_sec_max, read_iops_sec_max_length);
 
-                insert_sec(file, "write_iops", write_iops_sec,
-                           write_iops_sec_max, write_iops_sec_max_length);
+                insert_sec<unsigned int>(file, "write_iops", write_iops_sec,
+                                         write_iops_sec_max, write_iops_sec_max_length);
             }
             else
             {
-                insert_sec(file, "total_iops", total_iops_sec,
-                           total_iops_sec_max, total_iops_sec_max_length);
+                insert_sec<unsigned int>(file, "total_iops", total_iops_sec,
+                                         total_iops_sec_max, total_iops_sec_max_length);
             }
 
             if ( !size_iops_sec.empty() && !(total_iops_sec.empty()
                                              && read_iops_sec.empty() && write_iops_sec.empty()))
             {
-                insert_sec(file, "size_iops", size_iops_sec, "", "");
+                insert_sec<unsigned int>(file, "size_iops", size_iops_sec, "", "");
             }
 
             file << "\t\t\t</iotune>" << endl;
@@ -1715,6 +1745,8 @@ int LibVirtDriver::deployment_description_kvm(
 
     get_attribute(nullptr, host, cluster, "NIC", "MODEL", default_model);
 
+    get_attribute(nullptr, host, cluster, "NIC", "VIRTIO_QUEUES", default_virtio_queues);
+
     num = vm->get_template_attribute("NIC", nic);
 
     for (int i=0; i<num; i++)
@@ -1751,7 +1783,6 @@ int LibVirtDriver::deployment_description_kvm(
             {
                 case VirtualNetwork::UNDEFINED:
                 case VirtualNetwork::LINUX:
-                case VirtualNetwork::VCENTER_PORT_GROUPS:
                 case VirtualNetwork::BRNONE:
                     file << "\t\t<interface type='bridge'>\n"
                          << "\t\t\t<source bridge="
@@ -1812,6 +1843,17 @@ int LibVirtDriver::deployment_description_kvm(
         {
             file << "\t\t\t<model type="
                  << one_util::escape_xml_attr(*the_model) << "/>\n";
+
+            if (!virtio_queues.empty())
+            {
+                set_queues(virtio_queues, vcpu);
+            }
+            else if (!default_virtio_queues.empty())
+            {
+                set_queues(default_virtio_queues, vcpu);
+
+                virtio_queues = default_virtio_queues;
+            }
 
             if (!virtio_queues.empty() && *the_model == "virtio")
             {
@@ -2098,8 +2140,12 @@ int LibVirtDriver::deployment_description_kvm(
         vm_bus     = pci[i]->vector_value("VM_BUS");
         vm_slot    = pci[i]->vector_value("VM_SLOT");
         vm_func    = pci[i]->vector_value("VM_FUNCTION");
+        vm_index   = pci[i]->vector_value("VM_BUS_INDEX");
 
         string uuid = pci[i]->vector_value("UUID");
+        string mdev = pci[i]->vector_value("MDEV_MODE");
+
+        one_util::tolower(mdev);
 
         if ( domain.empty() || bus.empty() || slot.empty() || func.empty() )
         {
@@ -2109,7 +2155,7 @@ int LibVirtDriver::deployment_description_kvm(
             continue;
         }
 
-        if ( !uuid.empty() )
+        if ( !uuid.empty() && (mdev == "legacy" || mdev.empty()) )
         {
             file << "\t\t<hostdev mode='subsystem' type='mdev' model='vfio-pci'>\n";
             file << "\t\t\t<source>\n";
@@ -2120,7 +2166,16 @@ int LibVirtDriver::deployment_description_kvm(
         }
         else
         {
-            file << "\t\t<hostdev mode='subsystem' type='pci' managed='yes'>\n";
+            file << "\t\t<hostdev mode='subsystem' type='pci' ";
+
+            if ( mdev == "nvidia" )
+            {
+                file << "managed='no'>\n";
+            }
+            else
+            {
+                file << "managed='yes'>\n";
+            }
 
             file << "\t\t\t<source>\n";
             file << "\t\t\t\t<address "
@@ -2130,11 +2185,17 @@ int LibVirtDriver::deployment_description_kvm(
                  << " function=" << one_util::escape_xml_attr("0x" + func)
                  << "/>\n";
             file << "\t\t\t</source>\n";
-
         }
 
-        if ( !vm_domain.empty() && !vm_bus.empty() && !vm_slot.empty() &&
-             !vm_func.empty() )
+        if (!vm_index.empty())
+        {
+            file << "\t\t\t\t<address type='pci'"
+                 << " domain='0x0000' slot='0000' function='0' "
+                 << " bus=" << one_util::escape_xml_attr(vm_index)
+                 << "/>\n";
+        }
+        else if (!vm_domain.empty() && !vm_bus.empty() && !vm_slot.empty() &&
+             !vm_func.empty())
         {
             file << "\t\t\t\t<address type='pci'"
                  << " domain="   << one_util::escape_xml_attr(vm_domain)
@@ -2151,9 +2212,11 @@ int LibVirtDriver::deployment_description_kvm(
 
     std::size_t found = machine.find("q35");
 
-    if (found != std::string::npos)
+    if (found != std::string::npos || arch == "aarch64" )
     {
-        int q35_root_ports = 0;
+        int  q35_root_ports = 0;
+        bool q35_numa_topo  = true;
+
         get_attribute(nullptr, host, cluster, "Q35_ROOT_PORTS", q35_root_ports);
 
         if (!q35_root_ports)
@@ -2161,16 +2224,95 @@ int LibVirtDriver::deployment_description_kvm(
             q35_root_ports = Q35_ROOT_DEFAULT_PORTS;
         }
 
+        get_attribute(nullptr, host, cluster, "Q35_NUMA_PCIE", q35_numa_topo);
+
         file << "\t<devices>" << endl;
         file << "\t\t<controller index='0' type='pci' model='pcie-root'/>" << endl;
 
-        for (int i=0; i<q35_root_ports; ++i)
+        if (nodes.empty()) //Flat PCI hierarchy
         {
-            file << "\t\t<controller type='pci' model='pcie-root-port'/>" << endl;
-        }
+            for (int i=0; i<q35_root_ports; ++i)
+            {
+                file << "\t\t<controller type='pci' model='pcie-root-port'/>" << endl;
+            }
 
-        file << "\t\t<controller type='pci' model='pcie-to-pci-bridge'/>" << endl;
-        file << "\t</devices>" << endl;
+            file << "\t\t<controller type='pci' model='pcie-to-pci-bridge'/>" << endl;
+            file << "\t</devices>" << endl;
+        }
+        else if (q35_numa_topo) //PCIe expander bus in each NUMA node
+        {
+            ostringstream to_h_s;
+
+            to_h_s << showbase << internal << setfill('0') << hex << setw(4);
+
+            for (unsigned int i = 0; i < nodes.size(); i++)
+            {
+                unsigned int bus_i = 20 + i * 14;
+
+                to_h_s << (0x20 + 0x20 * i);
+
+                string bus_i_s = to_h_s.str();
+
+                to_h_s.str("");
+
+                //PCIe expander bus in NUMA node i
+                file << "\t\t<controller type='pci' index='"<< bus_i <<"'"
+                     << " model='pcie-expander-bus'>" << endl
+                     << "\t\t\t<target busNr='" << bus_i_s << "'>" << endl
+                     << "\t\t\t\t<node>" << i << "</node>" << endl
+                     << "\t\t\t</target>" << endl
+                     << "\t\t</controller>" << endl;
+
+                //4 PCIe root ports
+                for (unsigned int j = 0; j < 4; j++)
+                {
+                    unsigned int root_i = bus_i + 1 + j;
+
+                    file << "\t\t<controller type='pci' index='" << root_i << "'"
+                         << " model='pcie-root-port'>" << endl
+                         << "\t\t\t<address type='pci' bus='" << bus_i << "'"
+                         << " slot='0' function='" << j << "'";
+
+                    if ( j == 0)
+                    {
+                        file << " multifunction='on'/>" << endl;
+                    }
+                    else
+                    {
+                        file << "/>" << endl;
+                    }
+
+                    file << "\t\t</controller>" << endl;
+                }
+
+                //8 port PCIe switch
+                unsigned int sw_i = bus_i + 5;
+
+                file << "\t\t<controller type='pci' index='" << sw_i << "'"
+                     << " model='pcie-switch-upstream-port'>" << endl
+                     << "\t\t\t<address type='pci' bus='" << bus_i + 1 << "'"
+                     << " slot='0' function='0'/>"
+                     << "\t\t</controller>";
+
+                for (unsigned int j = 0; j < 8; j++)
+                {
+                    unsigned int root_i = sw_i + 1 + j;
+
+                    file << "\t\t<controller type='pci' index='" << root_i << "'"
+                         << " model='pcie-switch-downstream-port'>" << endl
+                         << "\t\t\t<address type='pci' bus='" << sw_i << "'"
+                         << " slot='" << j << "' function='0'/>" << endl
+                         << "\t\t</controller>" << endl;
+                }
+            }
+
+            //Adds pcie-to-pci bridge in the first pcie port in NUMA node 0
+            file << "\t\t<controller type='pci' model='pcie-to-pci-bridge'>" << endl
+                 << "\t\t\t<address type='pci' bus='22' slot='0' function='0'/>" << endl
+                 << "\t\t</controller>" << endl;
+
+            file << "\t</devices>" << endl;
+        }
     }
 
 

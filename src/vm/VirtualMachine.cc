@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -56,8 +56,6 @@ VirtualMachine::VirtualMachine(int           id,
     stime(time(0)),
     etime(0),
     deploy_id(""),
-    history(0),
-    previous_history(0),
     disks(false),
     nics(false),
     _log(0),
@@ -82,11 +80,6 @@ VirtualMachine::VirtualMachine(int           id,
 
 VirtualMachine::~VirtualMachine()
 {
-    for (unsigned int i=0 ; i < history_records.size() ; i++)
-    {
-        delete history_records[i];
-    }
-
     delete _log;
 }
 
@@ -663,11 +656,12 @@ int VirtualMachine::bootstrap(SqlDB * db)
 
 int VirtualMachine::select(SqlDB * db)
 {
+
     ostringstream   oss;
     ostringstream   ose;
 
     int    rc;
-    int    last_seq;
+    int    seq;
 
     Nebula& nd = Nebula::instance();
 
@@ -679,36 +673,15 @@ int VirtualMachine::select(SqlDB * db)
         return rc;
     }
 
-    //Get History Records.
-    if ( hasHistory() )
+    if (history && history->select(db) != 0)
     {
-        last_seq = history->seq;
-
-        delete history_records[last_seq];
-
-        for (int i = last_seq; i >= 0; i--)
-        {
-            History * hp;
-
-            hp = new History(oid, i);
-            history_records[i] = hp;
-
-            rc = hp->select(db);
-
-            if ( rc != 0)
-            {
-                goto error_previous_history;
-            }
-
-            if ( i == last_seq )
-            {
-                history = hp;
-            }
-            else if ( i == last_seq - 1 )
-            {
-                previous_history = hp;
-            }
-        }
+        seq = history->seq;
+        goto error_common;
+    }
+    if (previous_history && previous_history->select(db) != 0)
+    {
+        seq = previous_history->seq;
+        goto error_common;
     }
 
     if ( state == DONE ) //Do not recreate dirs. They may be deleted
@@ -768,12 +741,10 @@ int VirtualMachine::select(SqlDB * db)
 
     return 0;
 
-error_previous_history:
-    ose << "Cannot get previous history record (seq:" << history->seq
-        << ") for VM id: " << oid;
+error_common:
+    ose << "Error loading history for VM " << oid  << " seq " << seq;
 
     log("ONE", Log::ERROR, ose);
-
     NebulaLog::error("ONE", ose.str());
 
     return -1;
@@ -969,14 +940,6 @@ int VirtualMachine::insert(SqlDB * db, string& error_str)
     // Move known attributes that doesn't need additional procesing to template
     // -------------------------------------------------------------------------
     parse_well_known_attributes();
-
-    // ------------------------------------------------------------------------
-    // Parse the Public Cloud specs for this VM
-    // ------------------------------------------------------------------------
-    if (parse_public_clouds(error_str) != 0)
-    {
-        goto error_public;
-    }
 
     // ------------------------------------------------------------------------
     // Check for EMULATOR attribute
@@ -1196,7 +1159,7 @@ int VirtualMachine::insert(SqlDB * db, string& error_str)
     // the backups
     // ------------------------------------------------------------------------
     rc = _backups.parse(user_obj_template.get(), disks.backup_increment(true),
-                        false, error_str);
+                        disks.backup_keep_last(true), false, error_str);
 
     if ( rc != 0 )
     {
@@ -1336,7 +1299,6 @@ error_os:
 error_pci:
 error_defaults:
 error_vrouter:
-error_public:
 error_name:
 error_mem_mode:
 error_common:
@@ -1739,9 +1701,7 @@ error_disk:
 int VirtualMachine::automatic_requirements(set<int>& cluster_ids,
                                            string& error_str)
 {
-    string tm_mad_system;
     ostringstream   oss;
-    set<string>     clouds;
     bool            shareable = false;
     set<int>        datastore_ids;
 
@@ -1778,38 +1738,16 @@ int VirtualMachine::automatic_requirements(set<int>& cluster_ids,
             oss << " | CLUSTER_ID = " << *i;
         }
 
-        oss << ") & !(PUBLIC_CLOUD = YES)";
-    }
-    else
-    {
-        oss << "!(PUBLIC_CLOUD = YES)";
+        oss << ") & ";
     }
 
     if ( is_pinned() )
     {
-        oss << " & (PIN_POLICY = PINNED)";
+        oss << "(PIN_POLICY = PINNED)";
     }
     else
     {
-        oss << " & !(PIN_POLICY = PINNED)";
-    }
-
-    int num_public = get_public_clouds(clouds);
-
-    if (num_public != 0)
-    {
-        auto it = clouds.begin();
-
-        oss << " | (PUBLIC_CLOUD = YES & (";
-
-        oss << "HYPERVISOR = " << *it;
-
-        for (++it; it != clouds.end() ; ++it)
-        {
-            oss << " | HYPERVISOR = " << *it;
-        }
-
-        oss << "))";
+        oss << "!(PIN_POLICY = PINNED)";
     }
 
     const VectorAttribute * cpu_model = obj_template->get("CPU_MODEL");
@@ -1873,6 +1811,7 @@ int VirtualMachine::automatic_requirements(set<int>& cluster_ids,
 
         }
 
+        std::string tm_mad_system;
         if ( obj_template->get("TM_MAD_SYSTEM", tm_mad_system) )
         {
             oss << " & (TM_MAD = \"" << one_util::trim(tm_mad_system) << "\")";
@@ -1959,6 +1898,7 @@ int VirtualMachine::insert_replace(SqlDB *db, bool replace, string& error_str)
             << "gid = "           <<  gid           << ", "
             << "state = "         <<  state         << ", "
             << "lcm_state = "     <<  lcm_state     << ", "
+            << "resched = "       <<  resched       << ", "
             << "owner_u = "       <<  owner_u       << ", "
             << "group_u = "       <<  group_u       << ", "
             << "other_u = "       <<  other_u       << ", "
@@ -1977,6 +1917,7 @@ int VirtualMachine::insert_replace(SqlDB *db, bool replace, string& error_str)
             <<        gid           << ","
             <<        state         << ","
             <<        lcm_state     << ","
+            <<        resched        << ","
             <<        owner_u       << ","
             <<        group_u       << ","
             <<        other_u       << ","
@@ -2057,7 +1998,7 @@ void VirtualMachine::add_history(
     int           seq;
     string        vm_xml;
 
-    if (history == 0)
+    if (!history)
     {
         seq = 0;
     }
@@ -2065,15 +2006,13 @@ void VirtualMachine::add_history(
     {
         seq = history->seq + 1;
 
-        previous_history = history;
+        previous_history = move(history);
     }
 
     to_xml_extended(vm_xml, 0, false);
 
-    history = new History(oid, seq, hid, hostname, cid, vmm_mad, tm_mad, ds_id,
-                          vm_xml);
-
-    history_records.push_back(history);
+    history = make_unique<History>(oid, seq, hid, hostname, cid, vmm_mad, tm_mad,
+                                   ds_id, -2, -1, vm_xml);
 };
 
 /* -------------------------------------------------------------------------- */
@@ -2081,7 +2020,6 @@ void VirtualMachine::add_history(
 
 void VirtualMachine::cp_history()
 {
-    History * htmp;
     string    vm_xml;
 
     if (history == 0)
@@ -2091,7 +2029,7 @@ void VirtualMachine::cp_history()
 
     to_xml_extended(vm_xml, 0, false);
 
-    htmp = new History(oid,
+    auto htmp = make_unique<History>(oid,
                        history->seq + 1,
                        history->hid,
                        history->hostname,
@@ -2099,12 +2037,12 @@ void VirtualMachine::cp_history()
                        history->vmm_mad_name,
                        history->tm_mad_name,
                        history->ds_id,
+                       history->plan_id,
+                       history->action_id,
                        vm_xml);
 
-    previous_history = history;
-    history          = htmp;
-
-    history_records.push_back(history);
+    previous_history = move(history);
+    history          = move(htmp);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2112,17 +2050,16 @@ void VirtualMachine::cp_history()
 
 void VirtualMachine::cp_previous_history()
 {
-    History * htmp;
     string    vm_xml;
 
-    if ( previous_history == 0 || history == 0)
+    if ( !previous_history || !history )
     {
         return;
     }
 
     to_xml_extended(vm_xml, 0, false);
 
-    htmp = new History(oid,
+    auto htmp = make_unique<History>(oid,
                        history->seq + 1,
                        previous_history->hid,
                        previous_history->hostname,
@@ -2130,12 +2067,12 @@ void VirtualMachine::cp_previous_history()
                        previous_history->vmm_mad_name,
                        previous_history->tm_mad_name,
                        previous_history->ds_id,
+                       previous_history->plan_id,
+                       previous_history->action_id,
                        vm_xml);
 
-    previous_history = history;
-    history          = htmp;
-
-    history_records.push_back(history);
+    previous_history = move(history);
+    history          = move(htmp);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2143,39 +2080,45 @@ void VirtualMachine::cp_previous_history()
 
 void VirtualMachine::get_capacity(HostShareCapacity& sr) const
 {
-    float fcpu;
+    sr.set(oid, *obj_template);
+}
 
-    sr.pci.clear();
-    sr.nodes.clear();
-
-    sr.vmid = oid;
-
-    if ((get_template_attribute("MEMORY", sr.mem) == false) ||
-        (get_template_attribute("CPU", fcpu) == false))
+void VirtualMachine::get_previous_capacity(HostShareCapacity& sr, Template &tmpl) const
+{
+    if (!previous_history)
     {
-        sr.cpu = 0;
-        sr.mem = 0;
-        sr.disk = 0;
+        return;
+    }
 
-        sr.vcpu = 0;
+    const string& vm_info = previous_history->vm_info;
+
+    ObjectXML xml(vm_info);
+
+    vector<xmlNodePtr> content;
+    xml.get_nodes("/VM/TEMPLATE", content);
+
+    if (content.empty())
+    {
+        NebulaLog::error("ONE", "Unable to read capacity from previous history");
 
         return;
     }
 
-    sr.cpu = (int) (fcpu * 100); //%
-    sr.mem = sr.mem * 1024;  //Kb
-    sr.disk = 0;
+    auto rc = tmpl.from_xml_node(content[0]);
 
-    get_template_attribute("VCPU", sr.vcpu);
+    if (rc != 0)
+    {
+        NebulaLog::error("ONE", "Unable to parse capacity from previous history");
 
-    obj_template->get("PCI", sr.pci);
+        return;
+    }
 
-    obj_template->get("NUMA_NODE", sr.nodes);
+    sr.set(oid, tmpl);
 
-    sr.topology = obj_template->get("TOPOLOGY");
+    ObjectXML::free_nodes(content);
 
     return;
-};
+}
 
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
@@ -2279,49 +2222,6 @@ static int parse_memory_mode(string& mem_mode, string& error)
     return 0;
 }
 
-
-/* -------------------------------------------------------------------------- */
-/* -------------------------------------------------------------------------- */
-
-bool VirtualMachine::is_imported() const
-{
-    bool imported = false;
-
-    get_template_attribute("IMPORTED", imported);
-
-    return imported;
-}
-
-string VirtualMachine::get_import_state() const
-{
-    string import_state;
-
-    user_obj_template->get("IMPORT_STATE", import_state);
-    user_obj_template->erase("IMPORT_STATE");
-
-    return import_state;
-}
-
-/* -------------------------------------------------------------------------- */
-/* -------------------------------------------------------------------------- */
-
-bool VirtualMachine::is_imported_action_supported(VMActions::Action action) const
-{
-    string vmm_mad;
-
-    if (hasHistory())
-    {
-        vmm_mad = get_vmm_mad();
-    }
-    else
-    {
-        user_obj_template->get("HYPERVISOR", vmm_mad);
-    }
-
-    VirtualMachineManager * vmm = Nebula::instance().get_vmm();
-
-    return vmm->is_imported_action_supported(vmm_mad, action);
-}
 
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
@@ -2542,7 +2442,6 @@ string& VirtualMachine::to_xml_extended(string& xml, int n_history, bool sa) con
 {
     string template_xml;
     string user_template_xml;
-    string history_xml;
     string perm_xml;
     string snap_xml;
     string bck_xml;
@@ -2584,21 +2483,36 @@ string& VirtualMachine::to_xml_extended(string& xml, int n_history, bool sa) con
 
     if ( hasHistory() && n_history > 0 )
     {
-        oss << "<HISTORY_RECORDS>";
+        string history_xml;
 
         if ( n_history == 2 )
         {
-            for (unsigned int i=0; i < history_records.size(); i++)
+            if (history && history->seq > 1)
             {
-                oss << history_records[i]->to_xml(history_xml);
+                // Dump the full history record
+                auto vmpool = Nebula::instance().get_vmpool();
+                vmpool->dump_history(history_xml, oid);
+
+                // Remove the VM from the history to reduce size and comply with xml-schema
+                ObjectXML obj(history_xml);
+                obj.remove_nodes("/HISTORY_RECORDS/HISTORY/VM");
+
+                oss << obj;
+            }
+            else
+            {
+                oss << "<HISTORY_RECORDS>";
+                if (previous_history) oss << previous_history->to_xml(history_xml);
+                if (history) oss << history->to_xml(history_xml);
+                oss << "</HISTORY_RECORDS>";
             }
         }
         else
         {
+            oss << "<HISTORY_RECORDS>";
             oss << history->to_xml(history_xml);
+            oss << "</HISTORY_RECORDS>";
         }
-
-        oss << "</HISTORY_RECORDS>";
     }
     else
     {
@@ -2727,7 +2641,7 @@ string& VirtualMachine::to_xml_short(string& xml)
     if ( hasHistory() )
     {
         oss << "<HISTORY_RECORDS>";
-        oss << history_records[history_records.size() - 1]->to_xml_short(history_xml);
+        oss << history->to_xml_short(history_xml);
         oss << "</HISTORY_RECORDS>";
     }
     else
@@ -2810,6 +2724,9 @@ int VirtualMachine::from_xml(const string &xml_str)
     }
     rc += obj_template->from_xml_node(content[0]);
 
+    // Bug #6996: Remove Scheduled Action from the template
+    obj_template->erase("SCHED_ACTION");
+
     vector<VectorAttribute *> vdisks, vnics, alias, pcis;
 
     obj_template->get("DISK", vdisks);
@@ -2863,16 +2780,14 @@ int VirtualMachine::from_xml(const string &xml_str)
     if ( xpath(last_seq, "/VM/HISTORY_RECORDS/HISTORY/SEQ", -1) == 0 &&
          last_seq != -1 )
     {
-        history_records.resize(last_seq + 1);
+        history = make_unique<History>(oid, last_seq);
 
-        for (int i=0; i <= last_seq; ++i)
+        // Initialize previous history
+        --last_seq;
+        if (last_seq >= 0)
         {
-            history_records[i] = 0;
+            previous_history = make_unique<History>(oid, last_seq);
         }
-
-        history = new History(oid, last_seq);
-
-        history_records[last_seq] = history;
     }
 
     // -------------------------------------------------------------------------
@@ -2969,7 +2884,7 @@ int VirtualMachine::replace_template(
     auto old_user_tmpl = move(user_obj_template);
     user_obj_template  = move(new_tmpl);
 
-    if (post_update_template(error) == -1)
+    if (post_update_template(error, old_user_tmpl.get()) == -1)
     {
         user_obj_template = move(old_user_tmpl);
 
@@ -3014,7 +2929,7 @@ int VirtualMachine::append_template(
 
     user_obj_template->merge(new_tmpl.get());
 
-    if (post_update_template(error) == -1)
+    if (post_update_template(error, old_user_tmpl.get()) == -1)
     {
         user_obj_template = move(old_user_tmpl);
 
@@ -3039,7 +2954,13 @@ void VirtualMachine::set_template_error_message(const string& message)
 void VirtualMachine::set_template_error_message(const string& name,
                                                 const string& message)
 {
-    SingleAttribute * attr;
+    user_obj_template->erase(name);
+
+    if (message.empty())
+    {
+        return;
+    }
+
     ostringstream     error_value;
 
     error_value << one_util::log_time() << ": " << message.substr(0, MAX_ERROR_MSG_LENGTH);
@@ -3049,9 +2970,8 @@ void VirtualMachine::set_template_error_message(const string& name,
         error_value << "... see more details in VM log";
     }
 
-    attr = new SingleAttribute(name, error_value.str());
+    auto attr = new SingleAttribute(name, error_value.str());
 
-    user_obj_template->erase(name);
     user_obj_template->set(attr);
 }
 
@@ -3065,32 +2985,6 @@ void VirtualMachine::clear_template_error_message()
 
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
-
-void VirtualMachine::get_public_clouds(const string& pname, set<string> &clouds) const
-{
-    vector<VectorAttribute *>                 attrs;
-
-    user_obj_template->get(pname, attrs);
-
-    if ( !attrs.empty() && pname == "EC2" )
-    {
-        clouds.insert("ec2");
-    }
-
-    for (const auto* vattr : attrs)
-    {
-        const string& type = vattr->vector_value("TYPE");
-
-        if (!type.empty())
-        {
-            clouds.insert(type);
-        }
-    }
-}
-
-/* -------------------------------------------------------------------------- */
-/* -------------------------------------------------------------------------- */
-
 
 /**
  * Replaces the values of a vector value, preserving the existing ones
@@ -3234,6 +3128,9 @@ int VirtualMachine::updateconf(VirtualMachineTemplate* tmpl, string &err,
     VectorAttribute * context_bck = obj_template->get("CONTEXT");
     VectorAttribute * context_new = tmpl->get("CONTEXT");
 
+    bool allow_eth_updates = false;
+    Nebula::instance().get_configuration_attribute("CONTEXT_ALLOW_ETH_UPDATES", allow_eth_updates);
+
     if ( context_bck == 0 && context_new != 0 )
     {
         err = "Virtual machine does not have context, cannot add a new one.";
@@ -3246,6 +3143,7 @@ int VirtualMachine::updateconf(VirtualMachineTemplate* tmpl, string &err,
 
         // Remove equal values from the new context
         map<string, string> equal_values;
+        map<string, string> eth_updates;
 
         auto in = context_new->value().cbegin();
         auto ib = context_bck->value().cbegin();
@@ -3255,13 +3153,20 @@ int VirtualMachine::updateconf(VirtualMachineTemplate* tmpl, string &err,
         {
             if (in->first < ib->first)
             {
-                // Do not allow add new attribute with name ETHx_y
                 if (std::regex_match(in->first, regex("ETH\\d+_\\w+")))
                 {
-                    err = "Unable to add " + in->first +
-                          ", update NIC to update network context";
+                    if (allow_eth_updates)
+                    {
+                        eth_updates.insert(make_pair(in->first, in->second));
+                    }
+                    else
+                    {
+                        // Do not allow add new attribute with name ETHx_y
+                        err = "Unable to add " + in->first +
+                              ", update NIC to update network context";
 
-                    return -1;
+                        return -1;
+                    }
                 }
 
                 context_changed = true;
@@ -3280,13 +3185,20 @@ int VirtualMachine::updateconf(VirtualMachineTemplate* tmpl, string &err,
                 }
                 else
                 {
-                    // Do not allow update attribute with name ETHx_y
                     if (std::regex_match(in->first, regex("ETH\\d+_\\w+")))
                     {
-                        err = "Unable to update " + in->first +
-                              ", update NIC to update the network";
+                        if (allow_eth_updates)
+                        {
+                            eth_updates.insert(make_pair(in->first, in->second));
+                        }
+                        else
+                        {
+                            // Do not allow update attribute with name ETHx_y
+                            err = "Unable to update " + in->first +
+                                  ", update NIC to update network context";
 
-                        return -1;
+                            return -1;
+                        }
                     }
 
                     context_changed = true;
@@ -3304,19 +3216,17 @@ int VirtualMachine::updateconf(VirtualMachineTemplate* tmpl, string &err,
 
         for (const auto& attr : equal_values)
         {
+            if (!append && attr.first == "NETWORK")
+            {
+                // Regenerate NETWORK context in replace mode
+                continue;
+            }
+
             context_new->remove(attr.first);
         }
 
         context_new->replace("TARGET",  context_bck->vector_value("TARGET"));
         context_new->replace("DISK_ID", context_bck->vector_value("DISK_ID"));
-
-        // In case of replace, keep NETWORK attribute to regenerate net context
-        auto it_net = equal_values.find("NETWORK");
-
-        if ( it_net != equal_values.end() )
-        {
-            context_new->replace("NETWORK", it_net->second);
-        }
 
         obj_template->remove(context_bck);
         obj_template->set(context_new);
@@ -3330,6 +3240,12 @@ int VirtualMachine::updateconf(VirtualMachineTemplate* tmpl, string &err,
         }
 
         context_new = obj_template->get("CONTEXT");
+
+        // Manual overrides of ETH* attributes
+        for (const auto& eth_update : eth_updates)
+        {
+            context_new->replace(eth_update.first, eth_update.second);
+        }
 
         if (append)
         {
@@ -3374,7 +3290,8 @@ int VirtualMachine::updateconf(VirtualMachineTemplate* tmpl, string &err,
 
     if ( backup_conf != nullptr && lcm_state != BACKUP && lcm_state != BACKUP_POWEROFF)
     {
-        bool increment = disks.backup_increment(_backups.do_volatile()) &&
+        bool do_volatile = _backups.do_volatile();
+        bool increment = disks.backup_increment(do_volatile) &&
                          !has_snapshots();
 
         string smode        = backup_conf->vector_value("MODE");
@@ -3399,7 +3316,7 @@ int VirtualMachine::updateconf(VirtualMachineTemplate* tmpl, string &err,
 
         backup_conf = nullptr;
 
-        if ( _backups.parse(tmpl, increment, append, err) != 0 )
+        if ( _backups.parse(tmpl, increment, disks.backup_keep_last(do_volatile), append, err) != 0 )
         {
             NebulaLog::log("ONE", Log::ERROR, err);
             return -1;
@@ -3634,8 +3551,6 @@ int VirtualMachine::get_auto_network_leases(VirtualMachineTemplate * tmpl,
 
     for (auto vattr : vnics)
     {
-        std::string net_mode;
-
         vattr->vector_value("NIC_ID", nic_id);
 
         VirtualMachineNic * nic = get_nic(nic_id);
@@ -3650,11 +3565,9 @@ int VirtualMachine::get_auto_network_leases(VirtualMachineTemplate * tmpl,
             return -1;
         }
 
-        net_mode = nic->vector_value("NETWORK_MODE");
-
         string network_id = nic->vector_value("NETWORK_ID");
 
-        if (!one_util::icasecmp(net_mode, "AUTO") || !network_id.empty())
+        if (!nic->is_auto() || !network_id.empty())
         {
             std::ostringstream oss;
 
@@ -3818,10 +3731,10 @@ int VirtualMachine::set_up_attach_nic(VirtualMachineTemplate * tmpl, string& err
 
     if ( is_pci )
     {
-        Nebula& nd = Nebula::instance();
-        string bus;
-
         std::vector<const VectorAttribute*> pcis;
+        vector<VectorAttribute *> nodes;
+
+        std::map<unsigned int, std::set<unsigned int>> palloc;
 
         int max_pci_id = -1;
 
@@ -3830,6 +3743,7 @@ int VirtualMachine::set_up_attach_nic(VirtualMachineTemplate * tmpl, string& err
         for (const auto& pci: pcis)
         {
             int pci_id;
+            unsigned int numa_node;
 
             pci->vector_value("PCI_ID", pci_id, -1);
 
@@ -3837,16 +3751,28 @@ int VirtualMachine::set_up_attach_nic(VirtualMachineTemplate * tmpl, string& err
             {
                 max_pci_id = pci_id;
             }
+
+            if (pci->vector_value("NUMA_NODE", numa_node) != -1)
+            {
+                unsigned int index;
+
+                if ( pci->vector_value("VM_BUS_INDEX", index) != -1 )
+                {
+                    std::set<unsigned int>& ports = palloc[numa_node];
+                    ports.insert(index);
+                }
+            }
         }
 
         _new_nic->replace("PCI_ID", max_pci_id + 1);
 
-        nd.get_configuration_attribute("PCI_PASSTHROUGH_BUS", bus);
+        bool numa = obj_template->get("NUMA_NODE", nodes) > 0;
 
-        if ( HostSharePCI::set_pci_address(_new_nic.get(), bus,
-                                           test_machine_type("q35"), false) != 0 )
+        if (HostSharePCI::set_pci_address(_new_nic.get(),
+                                          palloc,
+                                          test_machine_type("q35"),
+                                          numa) == -1)
         {
-            err = "Wrong BUS in PCI attribute";
             return -1;
         }
     }
@@ -3966,6 +3892,8 @@ int VirtualMachine::attach_pci(VectorAttribute * vpci, string& err)
 {
     std::vector<const VectorAttribute*> pcis;
 
+    std::map<unsigned int, std::set<unsigned int>> palloc;
+
     int max_pci_id = -1;
 
     obj_template->get("PCI", pcis);
@@ -3974,34 +3902,47 @@ int VirtualMachine::attach_pci(VectorAttribute * vpci, string& err)
     {
         int pci_id;
 
+        unsigned int numa_node;
+
         pci->vector_value("PCI_ID", pci_id, -1);
 
         if (pci_id > max_pci_id)
         {
             max_pci_id = pci_id;
         }
+
+        if (pci->vector_value("NUMA_NODE", numa_node) != -1)
+        {
+            unsigned int index;
+
+            if ( pci->vector_value("VM_BUS_INDEX", index) != -1 )
+            {
+                std::set<unsigned int>& ports = palloc[numa_node];
+                ports.insert(index);
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
-    // Setup PCI attribute & Context
+    // Setup PCI attribute & Context (VM running at host and PCI is allocated)
     // -------------------------------------------------------------------------
-    Nebula& nd = Nebula::instance();
     std::unique_ptr<VectorAttribute> _new_pci(vpci->clone());
-
-    string bus;
 
     _new_pci->replace("PCI_ID", max_pci_id + 1);
 
-    nd.get_configuration_attribute("PCI_PASSTHROUGH_BUS", bus);
+    add_pci_context(_new_pci.get());
 
-    if ( HostSharePCI::set_pci_address(_new_pci.get(), bus,
-                                       test_machine_type("q35"), false) != 0 )
+    vector<VectorAttribute *> nodes;
+
+    bool numa = obj_template->get("NUMA_NODE", nodes) > 0;
+
+    if (HostSharePCI::set_pci_address(_new_pci.get(),
+                                      palloc,
+                                      test_machine_type("q35"),
+                                      numa) == -1)
     {
-        err = "Wrong BUS in PCI attribute";
         return -1;
     }
-
-    add_pci_context(_new_pci.get());
 
     // -------------------------------------------------------------------------
     // Add new nic to template
@@ -4116,6 +4057,27 @@ void VirtualMachine::release_vmgroup()
     VMGroupPool * vmgrouppool = Nebula::instance().get_vmgrouppool();
 
     vmgrouppool->del_vm(thegroup, get_oid());
+}
+
+/* -------------------------------------------------------------------------- */
+
+int VirtualMachine::vmgroup_id()
+{
+    int vmg_id;
+
+    VectorAttribute * thegroup = obj_template->get("VMGROUP");
+
+    if ( thegroup == nullptr )
+    {
+        return -1;
+    }
+
+    if ( thegroup->vector_value("VMGROUP_ID", vmg_id) == 0 )
+    {
+        return vmg_id;
+    }
+
+    return -1;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -4234,6 +4196,11 @@ bool VirtualMachine::is_running_quota() const
 void VirtualMachine::get_quota_template(VirtualMachineTemplate& quota_tmpl,
                                         bool basic_quota, bool running_quota)
 {
+    if (hasHistory())
+    {
+        quota_tmpl.replace("CLUSTER_ID", get_cid());
+    }
+
     if (basic_quota)
     {
         quota_tmpl.replace("VMS", 1);

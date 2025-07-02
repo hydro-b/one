@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -1065,8 +1065,16 @@ function get_disk_information {
         fi
         ;;
     cdrom)
-        TYPE_SOURCE="file"
-        TYPE_XML="file"
+        case "$DISK_TYPE" in
+        BLOCK)
+            TYPE_SOURCE="dev"
+            TYPE_XML="block"
+            ;;
+        *)
+            TYPE_SOURCE="file"
+            TYPE_XML="file"
+            ;;
+        esac
         DEVICE="cdrom"
         ;;
     rbd*)
@@ -1300,4 +1308,114 @@ function send_to_monitor {
     # Send message
     echo "$msg_type $msg_result $msg_oid $msg_ts $payload_b64" |
         nc -u -w1 $mon_address $mon_port
+}
+
+######################################################
+# AutoNFS functionality
+######################################################
+
+# For security (to prevent other files from being modified), only this exact command is allowed
+# by sudoers. The sed expression is passed as stdin.
+SUDO_SED_FSTAB='flock -w 5 /etc/fstab sudo sed -i -f /proc/self/fd/0 /etc/fstab'
+if [ -z "$ONE_LOCATION" ]; then
+    DS_DIR=/var/lib/one/datastores
+else
+    DS_DIR=$ONE_LOCATION/var/datastores
+fi
+
+#-------------------------------------------------------------------------------
+# Return a command that upon execution will undo local setup for no-longer-used AutoNFS datastores,
+# that is, which have NFS_AUTO_ENABLE set to 'false', or no longer exist anymore.
+#    @return string representation of the command
+#-------------------------------------------------------------------------------
+function autonfs_cleanup_command {
+    ANFS_DATASTORES="$(onedatastore list --json | jq -r '.DATASTORE_POOL.DATASTORE[] | select(.TEMPLATE.NFS_AUTO_ENABLE // "no" | ascii_downcase == "yes").ID')"
+
+    cat <<EOF
+autonfs_remove_fstab() {
+    DS_BASE_PATH="\$1"
+
+    FSTAB_LINE_REGEX="\\S\\+ \$DS_BASE_PATH nfs .*"
+    # sed cmd must use custom regex delimiters (e.g., |) because FSTAB_LINE_REGEX contains slashes (/).
+    echo "\|^\${FSTAB_LINE_REGEX}$|d" | $SUDO_SED_FSTAB
+}
+
+# Clean no-longer-existing datastores
+NFS_MOUNTED_DSS="\$({ findmnt -nt nfs4; findmnt -nt nfs; } | grep '^$DS_DIR/[0-9]\\+\\s' | cut -f1 -d' ' | awk -F/ '{print \$NF}')" || true
+for ds in \$NFS_MOUNTED_DSS; do
+    DS_BASE_PATH="$DS_DIR/\$ds"
+    if test -f "\$DS_BASE_PATH/.automounted" && ! echo "$ANFS_DATASTORES" | grep -q "^\$ds$"; then
+        timeout -s KILL 30s sudo umount "\$DS_BASE_PATH" || continue
+        autonfs_remove_fstab \$DS_BASE_PATH
+        rmdir "\$DS_BASE_PATH"
+    fi
+done
+EOF
+}
+
+#-------------------------------------------------------------------------------
+# Return a command that upon execution will mount an AutoNFS datastore, if configured. Configuration
+# is persisted in fstab.
+# Additionally, mount cleanup is performed.
+#    @param $1    - Datastore ID
+#    @param $2-$5 - AutoNFS attributes: NFS_AUTO_{ENABLE,HOST,PATH,OPTS}
+#    @return string representation of the command, empty if AutoNFS not enabled
+#-------------------------------------------------------------------------------
+function autonfs_mount_command {
+    DSID="$1"
+    ANFS_ENABLE="$2"
+    ANFS_HOST="$3"
+    ANFS_PATH="$4"
+    ANFS_OPTS="$5"
+
+    DS_BASE_PATH="$DS_DIR/$DSID"
+    FSTAB_LINE="$ANFS_HOST:$ANFS_PATH $DS_BASE_PATH nfs ${ANFS_OPTS:-defaults} 0 0"
+
+    cat <<EOF
+`autonfs_cleanup_command`
+
+set -e
+# Mount the required datastore
+if [ "${ANFS_ENABLE,,}" = 'yes' ]; then
+    # Remove old entries of DS_BASE_PATH from /etc/fstab before adding the new one
+    autonfs_remove_fstab $DS_BASE_PATH
+
+    # Add FSTAB_LINE to /etc/fstab using sed's "a" command.
+    grep -qe "^$FSTAB_LINE$" /etc/fstab || echo "\\\$a\\
+    $FSTAB_LINE" | $SUDO_SED_FSTAB
+    mkdir -p "$DS_BASE_PATH"
+    timeout -s KILL 30s sudo mount "$DS_BASE_PATH"
+    touch "$DS_BASE_PATH/.automounted"
+fi
+set +e
+EOF
+}
+
+#-------------------------------------------------------------------------------
+# Return a command that upon execution will temporarily mount an AutoNFS
+# datastore, if configured.
+#    @param $1    - Datastore base_path
+#    @param $2-$5 - AutoNFS attributes: NFS_AUTO_{ENABLE,HOST,PATH,OPTS}
+#    @return string representation of the command, empty if AutoNFS not enabled
+#-------------------------------------------------------------------------------
+function autonfs_tmpsetup_command {
+    DS_BASE_PATH="$1"
+    ANFS_ENABLE="$2"
+    ANFS_HOST="$3"
+    ANFS_PATH="$4"
+    ANFS_OPTS="$5"
+    if [ -n "$ANFS_OPTS" ]; then
+        ANFS_OPTS="-o '$ANFS_OPTS'"
+    fi
+    if [ "${ANFS_ENABLE,,}" = 'yes' ]; then
+        cat <<EOF
+`autonfs_cleanup_command`
+
+# If not already mounted, do it
+if ! findmnt --source "$ANFS_HOST:$ANFS_PATH" --mountpoint "$DS_BASE_PATH" > /dev/null; then
+    timeout -s KILL 30s sudo mount $ANFS_OPTS "$ANFS_HOST:$ANFS_PATH" "$DS_BASE_PATH"
+    touch "$DS_BASE_PATH/.automounted"
+fi
+EOF
+    fi
 }

@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -242,6 +242,23 @@ void QuotaUpdate::request_execute(xmlrpc_c::paramList const& paramList,
 
     if ( rc != 0 )
     {
+        failure_response(ACTION, att);
+        return;
+    }
+
+    std::vector<const VectorAttribute*> vm_quotas;
+    quota_tmpl.get("VM", vm_quotas);
+
+    if (vm_quotas.size() > 1)
+    {
+        att.resp_msg = "Only one default VM quota can be defined";
+        failure_response(ACTION, att);
+        return;
+    }
+
+    if (!vm_quotas.empty() && !vm_quotas[0]->vector_value("CLUSTER_IDS").empty())
+    {
+        att.resp_msg = "CLUSTER_IDS attribute is not allowed for default VM quota";
         failure_response(ACTION, att);
         return;
     }

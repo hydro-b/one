@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -35,14 +35,9 @@ if ruby_version < Gem::Version.new('2.1.0')
     gem 'scrub_rb'
 end
 
-if ruby_version >= Gem::Version.new('3.0.0')
-    gem 'rexml'
+if ruby_version < Gem::Version.new('2.6.0')
+    gem 'unf', '< 0.2.0'
 end
-
-gem 'async-io', '= 1.32.1'
-gem 'console', '= 1.15.3'
-gem 'etc'
-gem 'rb-inotify'
 
 ################################################################################
 # gems groups
@@ -54,12 +49,12 @@ elsif ruby_version < Gem::Version.new('2.3.0')
     nokogiri = '< 1.10'
 end
 
+
 ps = '< 3.0.0' if ruby_version < Gem::Version.new('2.1.0')
 
 if ruby_version < Gem::Version.new('2.2.0')
     rack     = '< 2.0.0'
     minitest = '< 5.12.0'
-    pg       = '< 1.2.0'
 end
 
 if ruby_version < Gem::Version.new('2.3.0')
@@ -71,16 +66,22 @@ if ruby_version <= Gem::Version.new('2.0.0')
    gem 'multipart-post', '~> 2.1.0'
 end
 
+if rubygems_version < Gem::Version.new('3.3.21')
+    gem 'ffi', '< 1.17.0'
+end
+
 gem 'ffi-rzmq', '~> 2.0.7'
 gem 'net-ldap'
 gem 'nokogiri', nokogiri
 gem 'public_suffix', ps
+gem 'rexml'
+gem 'aws-sdk-ec2', '>=1.151'
+gem 'aws-sdk-s3'
 
 group :cli do
     gem 'gnuplot'
     gem 'highline', '~> 1.7'
     gem 'mysql2'
-    gem 'pg', pg
 
     if ruby_version < Gem::Version.new('3.0.0')
         gem 'sqlite3', '<= 1.6.9'
@@ -97,7 +98,7 @@ group :onecfg, :cli do
     gem 'opennebula-augeas', '>= 0.6.6.pre'
 end
 
-group :onecfg, :cloud, :oneflow, :sunstone do
+group :onecfg, :cloud, :oneflow do
     gem 'json', '>= 2.0'
 end
 
@@ -105,76 +106,53 @@ group :onecfg do
     gem 'git', '~> 1.5'
 end
 
-group :hybrid do
-    gem 'aws-sdk-ec2', '>=1.151'
-    gem 'aws-sdk-s3'
-    gem 'aws-sdk-cloudwatch'
-    gem 'azure_mgmt_compute'
-    gem 'azure_mgmt_monitor'
-    gem 'azure_mgmt_network'
-    gem 'azure_mgmt_resources'
-    gem 'azure_mgmt_storage'
-    gem 'configparser'
-end
-
 group :packethost do
     gem 'minitest', minitest
     if ruby_version >= Gem::Version.new('2.3.0')
-	    gem 'faraday_middleware', '~> 1.2.0'
+        gem 'faraday_middleware', '~> 1.2.0'
     end
     gem 'activesupport', '~> 4.2'
     gem 'i18n', '~> 0.9'
 end
 
-group :cloud, :oneflow, :sunstone do
+group :cloud, :oneflow do
     gem 'rack', rack
-    gem 'sinatra', '< 4.0.0'
+    if ruby_version >= Gem::Version.new('3.0.0')
+        gem 'sinatra'
+        gem 'puma'
+        gem 'rackup'
+    else
+        gem 'sinatra', '< 4.0.0'
+    end
 end
 
 group :cloud do
-    gem 'thin'
+    if ruby_version < Gem::Version.new('3.0.0')
+        gem 'thin'
+    end
     gem 'uuidtools'
     gem 'curb'
 end
 
-group :oneflow, :sunstone do
-    gem 'ipaddress', '~> 0.8.3'
-end
-
 group :oneflow do
+    gem 'ipaddress', '~> 0.8.3'
     gem 'treetop', '>= 1.6.3'
     gem 'parse-cron'
-end
-
-group :sunstone do
-    if ruby_version >= Gem::Version.new('2.4.0')
-        gem 'webauthn'
-    end
-
-    gem 'zendesk_api', zendesk
-    gem 'rqrcode', rq
-    gem 'memcache-client'
-    gem 'dalli', '<3.0'  # https://github.com/OpenNebula/one/issues/5584
-    gem 'rotp'
 end
 
 group :oca do
     gem 'ox'
 end
 
-group :vmware do
-    gem 'addressable'
-
-    if ruby_version >= Gem::Version.new('2.3.0')
-        gem 'vsphere-automation-cis', '~> 0.4.6'
-        gem 'vsphere-automation-vcenter', '~> 0.4.6'
-    end
-
-    if ruby_version >= Gem::Version.new('2.4.1')
-        gem 'rbvmomi2', '~> 3.7.0'
-    end
-end
-
 group :prometheus do
     gem 'prometheus-client'
+end
+
+group :tproxy do
+    gem 'async-io', '= 1.32.1'
+    gem 'console', '= 1.15.3'
+end
+
+group :oneswap do
+    gem 'rbvmomi2'
 end

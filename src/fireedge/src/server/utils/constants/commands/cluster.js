@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -28,6 +28,9 @@ const CLUSTER_DELDATASTORE = 'cluster.deldatastore'
 const CLUSTER_ADDVNET = 'cluster.addvnet'
 const CLUSTER_DELVNET = 'cluster.delvnet'
 const CLUSTER_RENAME = 'cluster.rename'
+const CLUSTER_OPTIMIZE = 'cluster.optimize'
+const CLUSTER_PLANAPPLY = 'cluster.planexecute'
+const CLUSTER_PLANDELETE = 'cluster.plandelete'
 const CLUSTER_INFO = 'cluster.info'
 const CLUSTER_POOL_INFO = 'clusterpool.info'
 
@@ -42,8 +45,11 @@ const Actions = {
   CLUSTER_ADDVNET,
   CLUSTER_DELVNET,
   CLUSTER_RENAME,
+  CLUSTER_OPTIMIZE,
   CLUSTER_INFO,
   CLUSTER_POOL_INFO,
+  CLUSTER_PLANAPPLY,
+  CLUSTER_PLANDELETE,
 }
 
 module.exports = {
@@ -182,6 +188,36 @@ module.exports = {
         name: {
           from: postBody,
           default: '',
+        },
+      },
+    },
+    [CLUSTER_OPTIMIZE]: {
+      // inspected
+      httpMethod: GET,
+      params: {
+        id: {
+          from: resource,
+          default: -1,
+        },
+      },
+    },
+    [CLUSTER_PLANAPPLY]: {
+      // inspected
+      httpMethod: POST,
+      params: {
+        id: {
+          from: resource,
+          default: -1,
+        },
+      },
+    },
+    [CLUSTER_PLANDELETE]: {
+      // inspected
+      httpMethod: DELETE,
+      params: {
+        id: {
+          from: resource,
+          default: -1,
         },
       },
     },

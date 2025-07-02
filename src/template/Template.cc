@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -83,19 +83,15 @@ int Template::parse(const char * filename, char **error_msg)
 
 int Template::parse(const string &parse_str, char **error_msg)
 {
-    const char * str;
-    int rc;
-
-    YY_BUFFER_STATE str_buffer = 0;
     yyscan_t scanner = 0;
 
-    *error_msg = 0;
+    *error_msg = nullptr;
 
     template_lex_init(&scanner);
 
-    str = parse_str.c_str();
+    const auto str = parse_str.c_str();
 
-    str_buffer = template__scan_string(str, scanner);
+    YY_BUFFER_STATE str_buffer = template__scan_string(str, scanner);
 
     if (str_buffer == 0)
     {
@@ -104,7 +100,7 @@ int Template::parse(const string &parse_str, char **error_msg)
         return -1;
     }
 
-    rc = template_parse(this, error_msg, scanner);
+    const auto rc = template_parse(this, error_msg, scanner);
 
     template__delete_buffer(str_buffer, scanner);
 

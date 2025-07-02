@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -344,9 +344,9 @@ Request::ErrorCode VirtualMachineAllocate::pool_allocate(
     /* ---------------------------------------------------------------------- */
     if ( auto vm = vmpool->get(id) )
     {
-        for (const auto id: sa_ids)
+        for (const auto sa_id: sa_ids)
         {
-            vm->sched_actions().add(id);
+            vm->sched_actions().add(sa_id);
         }
 
         vmpool->update(vm.get());
@@ -1536,9 +1536,9 @@ Request::ErrorCode BackupJobAllocate::pool_allocate(
     /* ---------------------------------------------------------------------- */
     if ( auto bj = bjpool->get(id) )
     {
-        for (const auto id: sa_ids)
+        for (const auto bj_id: sa_ids)
         {
-            bj->sched_actions().add(id);
+            bj->sched_actions().add(bj_id);
         }
 
         bjpool->update(bj.get());

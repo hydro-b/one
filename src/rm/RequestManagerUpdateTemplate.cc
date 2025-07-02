@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -147,15 +147,6 @@ void VirtualMachineUpdateTemplate::request_execute(int oid,
     {
         att.resp_id = oid;
         failure_response(NO_EXISTS, att);
-
-        return;
-    }
-
-    // Check if the action is supported for imported VMs
-    if (vm->is_imported() && !vm->is_imported_action_supported(VMActions::UPDATE_ACTION))
-    {
-        att.resp_msg = "Action \"update\" is not supported for imported VMs";
-        failure_response(ACTION, att);
 
         return;
     }

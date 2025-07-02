@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -332,11 +332,6 @@ static int do_context_command(VirtualMachine * vm, const string& password,
 {
     prolog_cmd = "";
     disk_path  = "";
-
-    if (vm->get_host_is_cloud())
-    {
-        return 0;
-    }
 
     ostringstream os;
 
@@ -1015,15 +1010,12 @@ void VirtualMachineManager::trigger_cleanup(int vid, bool cancel_previous)
             m_hostname = vm->get_previous_hostname();
         }
 
-        if (!vm->get_host_is_cloud())
+        if ( nd.get_tm()->epilog_delete_commands(vm.get(), os, false, false) != 0 )
         {
-            if ( nd.get_tm()->epilog_delete_commands(vm.get(), os, false, false) != 0 )
-            {
-                goto error_epligo_command;
-            }
-
-            tm_command = os.str();
+            goto error_epligo_command;
         }
+
+        tm_command = os.str();
 
         // Invoke driver method
         drv_msg = format_message(
@@ -2742,6 +2734,7 @@ int VirtualMachineManager::load_drivers(const vector<const VectorAttribute*>& _m
 
         if ( rc != 0 )
         {
+            NebulaLog::error("VMM", "\tDriver already exists, name: " + name);
             return rc;
         }
 

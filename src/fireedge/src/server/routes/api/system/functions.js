@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -22,13 +22,19 @@ const {
   Actions: ActionSystem,
 } = require('server/utils/constants/commands/system')
 const { createTokenServerAdmin } = require('server/routes/api/auth/utils')
-
+const { getVmmConfig } = require('server/utils/vmm')
+const { getProfiles } = require('server/utils/profiles')
+const { getDefaultLabels } = require('server/utils/config')
+const { getTabManifest } = require('server/utils/remoteModules')
 const { defaultEmptyFunction, httpMethod } = defaults
-const { ok, internalServerError, badRequest } = httpCodes
+const { ok, internalServerError, badRequest, notFound, noContent } = httpCodes
 const { GET } = httpMethod
+const { writeInLogger } = require('server/utils/logger')
 
 const ALLOWED_KEYS_ONED_CONF = [
+  'CONTEXT_ALLOW_ETH_UPDATES',
   'DEFAULT_COST',
+  'DRS_INTERVAL',
   'DS_MAD_CONF',
   'MARKET_MAD_CONF',
   'VM_MAD',
@@ -40,6 +46,7 @@ const ALLOWED_KEYS_ONED_CONF = [
   'IMAGE_RESTRICTED_ATTR',
   'VNET_RESTRICTED_ATTR',
   'QUOTA_VM_ATTRIBUTE',
+  'VNC_PORTS',
 ]
 
 /**
@@ -112,6 +119,182 @@ const getConfig = (
   })
 }
 
+/**
+ *
+ * @param {object} res - http response
+ * @param {Function} next - express stepper
+ * @param {object} params - params of http request
+ * @param {object} [params.hypervisor="kvm"] - fetch vmm_exec_[hypervisor].conf
+ * @returns {void}
+ */
+const getVmmConfigHandler = async (
+  res = {},
+  next = defaultEmptyFunction,
+  params = {}
+) => {
+  try {
+    const { hypervisor } = params
+    const vmmConfig = (await getVmmConfig(hypervisor)) ?? {}
+
+    if (!vmmConfig) {
+      res.locals.httpCode = httpResponse(
+        notFound,
+        'No vmm_exec config found',
+        ''
+      )
+
+      return next()
+    }
+
+    if (Object.keys(vmmConfig)?.length === 0) {
+      res.locals.httpCode = httpResponse(
+        notFound,
+        'No valid vmm_exec config found',
+        ''
+      )
+    } else {
+      res.locals.httpCode = httpResponse(ok, vmmConfig)
+    }
+  } catch (error) {
+    const httpError = httpResponse(
+      internalServerError,
+      'Failed to load vmm_exec config',
+      ''
+    )
+    writeInLogger(httpError)
+    res.locals.httpCode = httpError
+  }
+
+  next()
+}
+
+/**
+ *
+ * @param {object} res - http response
+ * @param {Function} next - express stepper
+ * @param {object} params - params of http request
+ * @param {object} [params.id="-1"] - fetch [id].yaml profile
+ * @returns {void}
+ */
+const getTemplateProfiles = async (
+  res,
+  next = defaultEmptyFunction,
+  params = {}
+) => {
+  try {
+    const { id } = params
+    const fetchAll = id === '-1'
+    const foundProfiles = await getProfiles(id)
+
+    if (fetchAll) {
+      if (!Array.isArray(foundProfiles) || foundProfiles.length === 0) {
+        ;(res.locals ??= {}).httpCode = httpResponse(
+          notFound,
+          'No OS profiles found',
+          ''
+        )
+
+        return next()
+      }
+    } else {
+      if (!foundProfiles || Object.keys(foundProfiles).length === 0) {
+        ;(res.locals ??= {}).httpCode = httpResponse(
+          notFound,
+          'OS profile not found',
+          ''
+        )
+
+        return next()
+      }
+    }
+
+    ;(res.locals ??= {}).httpCode = httpResponse(ok, foundProfiles)
+  } catch (error) {
+    const httpError = httpResponse(
+      internalServerError,
+      error?.message || 'Error loading OS profiles',
+      ''
+    )
+    writeInLogger(httpError)
+    ;(res.locals ??= {}).httpCode = httpError
+  }
+
+  next()
+}
+
+/**
+ * @param {object} res - http response
+ * @param {Function} next - express stepper
+ * @returns {object} - Default labels
+ */
+const getDefaultLabelsHandler = async (
+  res = {},
+  next = defaultEmptyFunction
+) => {
+  try {
+    const defaultLabels = (await getDefaultLabels()) ?? {}
+
+    if (!defaultLabels || Object.keys(defaultLabels)?.length <= 0) {
+      res.locals.httpCode = httpResponse(
+        noContent,
+        'No default labels found',
+        ''
+      )
+
+      return next()
+    }
+
+    res.locals.httpCode = httpResponse(ok, defaultLabels)
+  } catch (error) {
+    const httpError = httpResponse(internalServerError, '')
+    writeInLogger(httpError)
+    res.locals.httpCode = httpError
+  }
+
+  next()
+}
+
+/**
+ * @param {object} res - http response
+ * @param {Function} next - express stepper
+ * @returns {object} - Tab manifest
+ */
+const getTabManifestHandler = async (res = {}, next = defaultEmptyFunction) => {
+  try {
+    const tabManifest = (await getTabManifest()) ?? {}
+
+    if (!tabManifest) {
+      res.locals.httpCode = httpResponse(notFound, 'No tab-manifest found', '')
+
+      return next()
+    }
+
+    if (Object.keys(tabManifest)?.length <= 0) {
+      res.locals.httpCode = httpResponse(
+        notFound,
+        'No valid tab manifest found',
+        ''
+      )
+    } else {
+      res.locals.httpCode = httpResponse(ok, tabManifest)
+    }
+  } catch (error) {
+    const httpError = httpResponse(
+      internalServerError,
+      'Failed to load tab-manifest',
+      ''
+    )
+    writeInLogger(httpError)
+    res.locals.httpCode = httpError
+  }
+
+  next()
+}
+
 module.exports = {
   getConfig,
+  getVmmConfigHandler,
+  getTemplateProfiles,
+  getTabManifestHandler,
+  getDefaultLabelsHandler,
 }

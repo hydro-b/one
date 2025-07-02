@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -19,14 +19,12 @@ const webpack = require('webpack')
 const nodeExternals = require('webpack-node-externals')
 const TerserPlugin = require('terser-webpack-plugin')
 const TimeFixPlugin = require('time-fix-plugin')
-const {
-  defaultProductionWebpackMode,
-} = require('./src/server/utils/constants/defaults')
+const mode = process.env.NODE_ENV || 'production'
 
 const js = {
   test: /\.js$/,
   loader: 'babel-loader',
-  include: path.resolve(__dirname, 'src'),
+  include: path.resolve(__dirname, 'src', 'server'),
 }
 
 const css = {
@@ -63,7 +61,7 @@ const worker = {
 }
 
 module.exports = {
-  mode: defaultProductionWebpackMode,
+  mode,
   entry: path.resolve(__dirname, 'src', 'server'),
   target: 'node',
   node: {
@@ -77,11 +75,14 @@ module.exports = {
   stats: {
     warnings: false,
   },
+  experiments: {
+    topLevelAwait: true,
+  },
   plugins: [
     new TimeFixPlugin(),
     new webpack.DefinePlugin({
       'process.env': {
-        NODE_ENV: JSON.stringify(defaultProductionWebpackMode),
+        NODE_ENV: JSON.stringify(mode),
       },
     }),
     new webpack.optimize.LimitChunkCountPlugin({

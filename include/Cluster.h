@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -22,13 +22,19 @@
 #include "BitMap.h"
 #include "ObjectCollection.h"
 
-
 /**
  *  The Cluster class.
  */
 class Cluster : public PoolObjectSQL
 {
 public:
+
+    enum DrsAutomation
+    {
+        MANUAL          = 0,
+        PARTIAL         = 1,
+        FULL            = 2
+    };
 
     virtual ~Cluster() = default;
 
@@ -79,6 +85,27 @@ public:
         get_template_attribute("RESERVED_MEM", mem);
     }
 
+    /**
+     *  Sets an error message in the Cluster template:
+     *    @param mod OpenNebula module to log big error messages
+     *    @param nam of the error message attribute
+     *    @param msg
+     */
+    void set_error_message(const char *mod, const std::string& nam, const std::string& msg);
+
+    // *************************************************************************
+    //  Plan and ONE DRS related attributes
+    // *************************************************************************
+    /**
+     * Load Cluster Plan from DB
+     */
+    void load_plan();
+
+    /**
+     * @return Plan automation <manual|partial|full>
+     */
+    DrsAutomation automation() const;
+
     // *************************************************************************
     // DataBase implementation (Public)
     // *************************************************************************
@@ -88,6 +115,8 @@ public:
      *  @return a reference to the generated string
      */
     std::string& to_xml(std::string& xml) const override;
+
+    std::string& template_xml(std::string& xml) const;
 
     /**
      *  Rebuilds the object from an xml formatted string
@@ -151,6 +180,8 @@ private:
 
     BitMap<65536> vnc_bitmap;
 
+    std::string plan_xml;
+
     // *************************************************************************
     // DataBase implementation (Private)
     // *************************************************************************
@@ -165,6 +196,13 @@ private:
     int insert_replace(SqlDB *db, bool replace, std::string& error_str);
 
     /**
+     * Validates the ONE_DRS attributes.
+     *    @param error string describing the error if any
+     *    @return 0 on success
+     */
+    int post_update_template(std::string& error, Template *_old_tmpl) override;
+
+    /**
      *  Bootstraps the database table(s) associated to the Cluster
      *    @return 0 on success
      */
@@ -175,19 +213,7 @@ private:
      *    @param db pointer to the db
      *    @return 0 on success
      */
-    int insert(SqlDB *db, std::string& error_str) override
-    {
-        int rc;
-
-        rc = insert_replace(db, false, error_str);
-
-        if ( rc != 0 )
-        {
-            return rc;
-        }
-
-        return vnc_bitmap.insert(oid, db);
-    }
+    int insert(SqlDB *db, std::string& error_str) override;
 
     /**
      *  Writes/updates the Cluster's data fields in the database.

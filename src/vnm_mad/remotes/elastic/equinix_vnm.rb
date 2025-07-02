@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -29,23 +29,7 @@ else
 end
 
 # %%RUBYGEMS_SETUP_BEGIN%%
-if File.directory?(GEMS_LOCATION)
-    real_gems_path = File.realpath(GEMS_LOCATION)
-    if !defined?(Gem) || Gem.path != [real_gems_path]
-        $LOAD_PATH.reject! {|l| l =~ /vendor_ruby/ }
-
-        # Suppress warnings from Rubygems
-        # https://github.com/OpenNebula/one/issues/5379
-        begin
-            verb = $VERBOSE
-            $VERBOSE = nil
-            require 'rubygems'
-            Gem.use_paths(real_gems_path)
-        ensure
-            $VERBOSE = verb
-        end
-    end
-end
+require 'load_opennebula_paths'
 # %%RUBYGEMS_SETUP_END%%
 
 $LOAD_PATH << RUBY_LIB_LOCATION
@@ -76,14 +60,14 @@ class EquinixProvider
 
         # HTTP 422 is returned if IP already assigned to the device
         # e.g. VM poweroff from inside + onevm resume
-        unless resp.code == '201' || resp.code == '422'
+        unless ['201', '422'].include?(resp.code)
             STDERR.puts "Error assigning #{external}:#{resp.message}"
             return 1
         end
 
         return 0
     rescue StandardError => e
-        OpenNebula.log_error("Error assigning #{external}:#{e.message}")
+        OpenNebula::DriverLogger.log_error("Error assigning #{external}:#{e.message}")
         1
     end
 
@@ -124,7 +108,7 @@ class EquinixProvider
 
         return 0
     rescue StandardError => e
-        OpenNebula.log_error("Error unassigning #{external}:#{e.message}")
+        OpenNebula::DriverLogger.log_error("Error unassigning #{external}:#{e.message}")
         1
     end
 

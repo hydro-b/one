@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -365,12 +365,17 @@ const setZones = () => {
                 const parsedURL = rpc && parse(rpc)
                 const parsedHost = parsedURL.hostname || ''
 
-                return {
+                const data = {
                   id: oneZone.ID || '',
                   name: oneZone.NAME || '',
                   rpc: rpc,
                   zeromq: `tcp://${parsedHost}:2101`,
                 }
+
+                oneZone?.TEMPLATE?.FIREEDGE_ENDPOINT &&
+                  (data.fireedge = oneZone?.TEMPLATE?.FIREEDGE_ENDPOINT)
+
+                return data
               })
             }
           },
@@ -534,8 +539,9 @@ const getServerAdminAndWrapUser = (userData = {}) => {
  * Remote login route function.
  *
  * @param {string} userData - user remote data user:password
+ * @param {object} response - http response
  */
-const remoteLogin = (userData = '') => {
+const remoteLogin = (userData = '', response = {}) => {
   const serverAdminData = getServerAdmin()
   const { username, token } = serverAdminData
   const [usr, pss = usr] = userData.split(':')
@@ -554,11 +560,56 @@ const remoteLogin = (userData = '') => {
               data.AUTH_DRIVER === 'public'
           )
           if (userFound) {
+            setRes(response)
             setZones()
             getServerAdminAndWrapUser(userFound)
           } else {
             next()
           }
+        } else {
+          next()
+        }
+      },
+      fillHookResource: false,
+    })
+  }
+}
+
+/**
+ * X.509 login route function.
+ *
+ * @param {string} userData - user remote data /DC=es/O=one/CN=user|/DC=us/O=two/CN=user
+ * @param {object} response - http response
+ */
+const x509Login = (userData = '', response = {}) => {
+  const serverAdminData = getServerAdmin()
+  const { username, token } = serverAdminData
+  if (username && token && userData) {
+    const reverseStringFields = (str) =>
+      /,/.test(str) ? str.split(',').reverse().join('/') : str
+    const parsedUserData = reverseStringFields(userData)
+
+    const oneConnect = connectOpennebula(`${username}:${username}`, token.token)
+    oneConnect({
+      action: USER_POOL_INFO,
+      parameters: getDefaultParamsOfOpennebulaCommand(USER_POOL_INFO, GET),
+      callback: (_, value) => {
+        const users = value?.USER_POOL?.USER || []
+        if (users.length) {
+          const userFound = users.find(
+            (data) =>
+              data.PASSWORD.includes(parsedUserData) &&
+              data.AUTH_DRIVER === 'x509'
+          )
+          if (userFound) {
+            setRes(response)
+            setZones()
+            getServerAdminAndWrapUser(userFound)
+          } else {
+            next()
+          }
+        } else {
+          next()
         }
       },
       fillHookResource: false,
@@ -613,5 +664,6 @@ module.exports = {
   getCreatedTokenOpennebula,
   createTokenServerAdmin,
   remoteLogin,
+  x509Login,
   getServerAdmin,
 }

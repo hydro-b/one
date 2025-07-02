@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -17,6 +17,7 @@
 package goca
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -24,23 +25,21 @@ import (
 	"github.com/OpenNebula/one/src/oca/go/src/goca/schemas/hook/keys"
 )
 
-var call = "one.zone.raftstatus"
-
-// Helper to create a Hook Network
+// Helper to create a Hook
 func createHook(t *testing.T) (*hk.Hook, int) {
 
 	tpl := hk.NewTemplate()
 	tpl.Add(keys.Name, "hook-goca")
 	tpl.Add(keys.Type, "api")
 	tpl.Add(keys.Command, "/usr/bin/ls -l")
-	tpl.AddPair("CALL", call)
+	tpl.AddPair("CALL", "one.zone.raftstatus")
 
 	id, err := testCtrl.Hooks().Create(tpl.String())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Get Hook Network by ID
+	// Get Hook by ID
 	hook, err := testCtrl.Hook(id).Info(false)
 	if err != nil {
 		t.Error(err)
@@ -81,15 +80,22 @@ func TestHook(t *testing.T) {
 	// Check execution records
 	currentExecs := len(hook.Log.ExecutionRecords)
 
+	time.Sleep(time.Second)
+
 	//triger the hook
 	testCtrl.Zones().ServerRaftStatus()
 
-	time.Sleep(2 * time.Second)
+	checkLogExecution := func() error {
+		hook, err = hookC.Info(false)
+		if len(hook.Log.ExecutionRecords) <= currentExecs {
+			return fmt.Errorf("Hook have not been triggered")
+		}
+		return nil
+	}
 
-	hook, err = hookC.Info(false)
-
-	if len(hook.Log.ExecutionRecords) <= currentExecs {
-		t.Errorf("Hook have not been triggered")
+	err = retryWithExponentialBackoff(checkLogExecution, 1000, 5, 2000, 3000)
+	if err != nil {
+		t.Errorf("Hook have not been triggered: %s", err)
 	}
 
 	// Check retry functionality
@@ -97,19 +103,16 @@ func TestHook(t *testing.T) {
 
 	hookC.Retry(hook.Log.ExecutionRecords[0].ExecId)
 
-	time.Sleep(2 * time.Second)
-
-	hook, err = hookC.Info(false)
-
-	if len(hook.Log.ExecutionRecords) <= currentExecs {
-		t.Errorf("Hook execution have not been retried")
+	err = retryWithExponentialBackoff(checkLogExecution, 1000, 5, 2000, 3000)
+	if err != nil {
+		t.Errorf("Hook execution has not been retried: %s", err)
 	}
 
 	if hook.Log.ExecutionRecords[len(hook.Log.ExecutionRecords)-1].Retry != "yes" {
-		t.Errorf("Hook execution have not been retried")
+		t.Errorf("Hook execution has not been retried")
 	}
 
-	// Delete template
+	// Delete hook
 	err = hookC.Delete()
 	if err != nil {
 		t.Error(err)

@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -24,7 +24,7 @@ const router = express.Router()
 
 express()
 
-const jsonResponser = (req, res) => {
+const jsonResponser = (_, res) => {
   const { httpCode } = res.locals
   if (httpCode) {
     const { id, file } = httpCode
@@ -52,7 +52,7 @@ xmlrpcRoutes({
 })
 
 /** NOT FOUND */
-router.use((req, res) => {
+router.use((_, res) => {
   res.status(notFound.id).json(notFound)
 })
 

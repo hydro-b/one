@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -82,7 +82,7 @@ void OpenNebulaTemplate::set_multiple_conf_default()
     set_conf_tm("qcow2", "NONE", "SYSTEM", "YES", "NO",  "qcow2");
 
     set_conf_tm("ssh", "SYSTEM", "SYSTEM", "NO", "YES", "");
-    set_conf_tm("vmfs", "NONE", "SYSTEM", "YES", "NO",  "");
+    set_conf_tm("local", "SYSTEM", "SYSTEM", "NO", "YES", "");
 
     set_conf_tm("ceph", "NONE", "SELF", "YES", "NO", "raw");
     set_conf_tm("dev", "NONE", "NONE", "YES", "NO",  "");
@@ -111,9 +111,6 @@ void OpenNebulaTemplate::set_multiple_conf_default()
     set_conf_ds("shared",         "",                     "NO");
     set_conf_ds("ssh",            "",                     "NO");
     set_conf_ds("vmfs",           "BRIDGE_LIST",          "NO");
-    set_conf_ds("vcenter",
-                "VCENTER_INSTANCE_ID, VCENTER_DS_REF, VCENTER_DC_REF, VCENTER_HOST, VCENTER_USER, VCENTER_PASSWORD",
-                "NO");
     set_conf_ds("ceph",
                 "DISK_TYPE,BRIDGE_LIST,CEPH_HOST,CEPH_USER,CEPH_SECRET",
                 "NO");
@@ -127,11 +124,11 @@ void OpenNebulaTemplate::set_multiple_conf_default()
     # s3
     #******
     */
-    set_conf_market("one",  "", "monitor");
+    set_conf_market("one", "", "monitor");
     set_conf_market("http", "BASE_URL,PUBLIC_DIR", "create, delete, monitor");
-    set_conf_market("s3",   "ACCESS_KEY_ID,SECRET_ACCESS_KEY,REGION,BUCKET",
+    set_conf_market("s3", "ACCESS_KEY_ID,SECRET_ACCESS_KEY,REGION,BUCKET",
                     "create, delete, monitor");
-    set_conf_market("docker_registry", "BASE_URL", "monitor");
+    set_conf_market("linuxcontainers", "", "monitor");
 
     register_multiple_conf_default("MARKET_MAD_CONF");
     /*
@@ -163,11 +160,9 @@ void OpenNebulaTemplate::set_multiple_conf_default()
     #*******************************************************************************
     #dummy
     #802.1Q
-    #ebtables
     #fw
     #ovswitch
     #vxlan
-    #vcenter
     #ovswitch_vxlan
     #bridge
     #elastic
@@ -177,11 +172,9 @@ void OpenNebulaTemplate::set_multiple_conf_default()
 
     set_conf_vn("dummy", "linux");
     set_conf_vn("802.1Q", "linux");
-    set_conf_vn("ebtables", "linux");
     set_conf_vn("fw", "linux");
     set_conf_vn("ovswitch", "openvswitch");
     set_conf_vn("vxlan", "linux");
-    set_conf_vn("vcenter", "vcenter_port_groups");
     set_conf_vn("ovswitch_vxlan", "openvswitch");
     set_conf_vn("bridge", "linux");
     set_conf_vn("elastic", "linux");
@@ -388,16 +381,10 @@ void OpenNebulaTemplate::set_conf_default()
     set_conf_single("SCRIPTS_REMOTE_DIR", "/var/tmp/one");
     set_conf_single("VM_SUBMIT_ON_HOLD", "NO");
     set_conf_single("API_LIST_ORDER", "DESC");
-    set_conf_single("HOST_ENCRYPTED_ATTR", "EC2_ACCESS");
-    set_conf_single("HOST_ENCRYPTED_ATTR", "EC2_SECRET");
-    set_conf_single("HOST_ENCRYPTED_ATTR", "AZ_ID");
-    set_conf_single("HOST_ENCRYPTED_ATTR", "AZ_CERT");
-    set_conf_single("HOST_ENCRYPTED_ATTR", "VCENTER_PASSWORD");
-    set_conf_single("HOST_ENCRYPTED_ATTR", "NSX_PASSWORD");
-    set_conf_single("HOST_ENCRYPTED_ATTR", "ONE_PASSWORD");
     set_conf_single("SHOWBACK_ONLY_RUNNING", "NO");
     set_conf_single("CONTEXT_RESTRICTED_DIRS", "/etc");
     set_conf_single("CONTEXT_SAFE_DIRS", "");
+    set_conf_single("CONTEXT_ALLOW_ETH_UPDATES", "NO");
 
     //DB CONFIGURATION
     vvalue.insert(make_pair("BACKEND", "sqlite"));
@@ -599,6 +586,36 @@ void OpenNebulaTemplate::set_conf_default()
     vattribute = new VectorAttribute("HOOK_LOG_CONF", vvalue);
 
     conf_default.insert(make_pair(vattribute->name(), vattribute));
+
+    /*/
+    #*******************************************************************************
+    # Scheduler + PlanManager
+    #  SCHED_MAD
+    #  SCHED_MAX_WND_TIME
+    #  SCHED_MAX_WND_LENGTH
+    #  SCHED_RETRY_TIME
+    #*******************************************************************************
+    */
+    vvalue.clear();
+
+    vvalue.insert(make_pair("EXECUTABLE", "one_sched"));
+    vvalue.insert(make_pair("ARGUMENTS", "-t 15 -p rank -o one_drs"));
+    vattribute = new VectorAttribute("SCHED_MAD", vvalue);
+
+    conf_default.insert(make_pair(vattribute->name(), vattribute));
+
+    set_conf_single("SCHED_MAX_WND_TIME", "30");
+    set_conf_single("SCHED_MAX_WND_LENGTH", "7");
+    set_conf_single("SCHED_RETRY_TIME", "60");
+
+    set_conf_single("MAX_ACTIONS_PER_HOST", "2");
+    set_conf_single("MAX_ACTIONS_PER_CLUSTER", "10");
+    set_conf_single("ACTION_TIMEOUT", "120");
+
+    set_conf_single("LIVE_RESCHEDS", "0");
+    set_conf_single("COLD_MIGRATE_MODE", "0");
+
+    set_conf_single("DRS_INTERVAL", "600");
 }
 
 /* -------------------------------------------------------------------------- */

@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -26,11 +26,13 @@ const {
   defaultWebpackMode,
   defaultConfigErrorMessage,
   defaultTmpPath,
+  from: fromData,
 } = require('server/utils/constants/defaults')
 const { writeInLogger } = require('server/utils/logger')
 const { getSunstoneConfig } = require('server/utils/yml')
 
 genPathResources()
+const { postBody } = fromData
 
 const appConfig = getSunstoneConfig()
 const optsMulter = { dest: appConfig.tmpdir || defaultTmpPath }
@@ -50,11 +52,9 @@ const routes = [
   'logo',
   'marketapp',
   'oneflow',
-  'vcenter',
   'vm',
   'vmpool',
   'zendesk',
-  'oneprovision',
   'sunstone',
   'system',
   'support',
@@ -121,6 +121,7 @@ routes.forEach((file) => {
                   })
                 }
                 serverDataSource.files = parseFiles(req && req.files)
+                serverDataSource[postBody] = req.body
 
                 return action(
                   res,

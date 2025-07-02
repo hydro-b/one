@@ -5,7 +5,7 @@ module OneDBFsck
     def check_network_cluster
         cluster = @data_cluster
 
-        @fixes_host_cluster = {}
+        @fixes_vnet_cluster = {}
 
         @db.fetch('SELECT oid,body FROM network_pool') do |row|
             doc = nokogiri_doc(row[:body], 'network_pool')
@@ -13,6 +13,7 @@ module OneDBFsck
             doc.root.xpath('CLUSTERS/ID').each do |e|
                 cluster_id    = e.text.to_i
                 cluster_entry = cluster[cluster_id]
+                vnet_id       = row[:oid]
 
                 if cluster_entry.nil?
                     e.remove
@@ -20,9 +21,22 @@ module OneDBFsck
                     log_error("VNet #{row[:oid]} is in cluster " \
                               "#{cluster_id}, but it does not exist")
 
-                    @fixes_host_cluster[row[:oid]] = { :body => doc.root.to_s }
+                    @db.fetch('SELECT cid FROM cluster_network_relation where ' \
+                              "oid=#{vnet_id}") do |row2|
+                        clusters = doc.root.at_xpath('CLUSTERS').children
+
+                        if clusters.find {|n| n.text == row2[:cid].to_s }.nil?
+                            cluster_e = doc.create_element('ID')
+
+                            doc.root.at_xpath('CLUSTERS').add_child(cluster_e).content = row2[:cid]
+                        end
+
+                        cluster[row2[:cid]][:vnets] << vnet_id
+                    end
+
+                    @fixes_vnet_cluster[row[:oid]] = doc.root.to_s
                 else
-                    cluster_entry[:vnets] << row[:oid]
+                    cluster_entry[:vnets] << vnet_id
                 end
             end
         end
@@ -73,27 +87,8 @@ module OneDBFsck
     # Fix network cluster
     def fix_network_cluster
         @db.transaction do
-            @fixes_host_cluster.each do |id, entry|
-                body = entry[:body]
-
-                @db.fetch('SELECT cid FROM cluster_network_relation where ' \
-                          "oid=#{id}") do |row|
-                    doc      = nokogiri_doc(body, 'cluster_network_relation')
-                    clusters = doc.root.at_xpath('CLUSTERS').children
-
-                    if clusters.find {|n| n.text == row[:cid].to_s }.nil?
-                        cluster_e = doc.create_element('ID')
-
-                        doc.root.at_xpath('CLUSTERS')
-                           .add_child(cluster_e).content = row[:cid]
-                    end
-
-                    @data_cluster[row[:cid]][:vnets] << id
-
-                    body = doc.root.to_s
-
-                    @db[:network_pool].where(:oid => id).update(:body => body)
-                end
+            @fixes_vnet_cluster.each do |id, body|
+                @db[:network_pool].where(:oid => id).update(:body => body)
             end
         end
     end
@@ -388,11 +383,11 @@ module OneDBFsck
             addrs    = { :mac => first_mac, :ip => first_ip, :ipv6 => ipv6 }
             counters = { :ar => counter_ar, :no_ar => counter_no_ar }
 
-            error, new_leases = calculate_new_leases(leases,
-                                                     ids,
-                                                     addrs,
-                                                     counters,
-                                                     error)
+            error, new_leases, removed_leases = calculate_new_leases(leases,
+                                                                     ids,
+                                                                     addrs,
+                                                                     counters,
+                                                                     error)
 
             counter_ar.each do |mac, counter_lease|
                 next if mac.nil?
@@ -420,6 +415,14 @@ module OneDBFsck
             unless new_leases.empty?
                 add_cdata(net_ar, 'ALLOCATED', " #{new_leases.join(' ')}")
             end
+
+            next if removed_leases.empty?
+
+            removed = removed_leases.join(',')
+            doc.xpath("VNET/UPDATED_VMS/ID[contains('#{removed}',.)]").remove
+            doc.xpath("VNET/OUTDATED_VMS/ID[contains('#{removed}',.)]").remove
+            doc.xpath("VNET/UPDATING_VMS/ID[contains('#{removed}',.)]").remove
+            doc.xpath("VNET/ERROR_VMS/ID[contains('#{removed}',.)]").remove
         end
 
         [error, new_used_leases]
@@ -467,6 +470,7 @@ module OneDBFsck
     # @return         [Boolean/Leases] The current value of error and new leases
     def calculate_new_leases(leases, ids, addrs, counters, error)
         new_leases = []
+        removed_leases = []
 
         leases.each do |lease_str|
             index        = lease_str[0].to_i
@@ -499,6 +503,8 @@ module OneDBFsck
 
             if counter_lease.nil?
                 if lease[:vm] != HOLD
+                    removed_leases << lease_oid
+
                     log_error("VNet #{ids[:o]} AR #{ids[:ar]} has " \
                               "leased #{lease_to_s(lease)} to #{lease_obj} " \
                               "#{lease_oid}, but it is actually free")
@@ -550,7 +556,7 @@ module OneDBFsck
             end
         end
 
-        [error, new_leases]
+        [error, new_leases, removed_leases]
     end
 
 end

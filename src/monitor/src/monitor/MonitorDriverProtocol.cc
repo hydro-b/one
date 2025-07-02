@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -110,7 +110,7 @@ void MonitorDriverProtocol::_monitor_vm(unique_ptr<monitor_msg_t> msg)
         string monitor_b64;
         string deploy_id;
 
-        if (vm->vector_value("ID", id) != 0)
+        if (vm->vector_value("ID", id) != 0 || id < 0)
         {
             continue;
         }
@@ -135,24 +135,16 @@ void MonitorDriverProtocol::_monitor_vm(unique_ptr<monitor_msg_t> msg)
             continue;
         }
 
-        if (id < 0)
+        // OpenNebula VM, merge templates with same ID
+        auto it = vms_templ.find(id);
+
+        if (it == vms_templ.end())
         {
-            // Wild VM, no need to merge storage monitor data
-            hm->monitor_wild_vm(deploy_id, mon_tmpl);
+            vms_templ[id] = move(mon_tmpl);
         }
         else
         {
-            // OpenNebula VM, merge templates with same ID
-            auto it = vms_templ.find(id);
-
-            if (it == vms_templ.end())
-            {
-                vms_templ[id] = move(mon_tmpl);
-            }
-            else
-            {
-                it->second.merge(&mon_tmpl);
-            }
+            it->second.merge(&mon_tmpl);
         }
     }
 

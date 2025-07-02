@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -16,7 +16,6 @@
 
 #include "Datastore.h"
 #include "DatastorePool.h"
-#include "GroupPool.h"
 #include "NebulaLog.h"
 #include "Nebula.h"
 #include "VirtualMachineDisk.h"
@@ -51,7 +50,7 @@ Datastore::Datastore(
 {
     if (ds_template)
     {
-        obj_template = move(ds_template);
+        obj_template = std::move(ds_template);
     }
     else
     {
@@ -61,6 +60,12 @@ Datastore::Datastore(
     set_umask(umask);
 
     group_u = 1;
+
+    //-------------------- Init search xpath routes ---------------------------
+    ObjectXML::paths  = {
+        "/DATASTORE/TEMPLATE/",
+        "/DATASTORE/"
+    };
 }
 
 /* ------------------------------------------------------------------------ */
@@ -376,19 +381,19 @@ error_common:
 
 int Datastore::set_tm_mad(const string &tm_mad, string &error_str)
 {
-    const VectorAttribute* vatt;
-
-    std::vector<std::string> modes;
-
-    ostringstream oss;
-
-    string orph;
+    if ( type == BACKUP_DS )
+    {
+        return 0;
+    }
 
     if (tm_mad.empty())
     {
         error_str = "No TM_MAD in template.";
         return -1;
     }
+
+    const VectorAttribute* vatt;
+    ostringstream oss;
 
     if ( Nebula::instance().get_tm_conf_attribute(tm_mad, vatt) != 0 )
     {
@@ -397,6 +402,7 @@ int Datastore::set_tm_mad(const string &tm_mad, string &error_str)
 
     if (type == SYSTEM_DS)
     {
+        // System datastore attributes
         bool shared_type;
         bool ds_migrate;
 
@@ -431,12 +437,15 @@ int Datastore::set_tm_mad(const string &tm_mad, string &error_str)
         remove_template_attribute("LN_TARGET");
         remove_template_attribute("CLONE_TARGET");
     }
-    else if (type != BACKUP_DS)
+    else
     {
+        // Image datastore attributes
         string st = vatt->vector_value("TM_MAD_SYSTEM");
 
         if (!st.empty())
         {
+            std::vector<std::string> modes;
+
             replace_template_attribute("TM_MAD_SYSTEM", st);
 
             modes = one_util::split(st, ',', true);
@@ -512,12 +521,31 @@ int Datastore::set_tm_mad(const string &tm_mad, string &error_str)
 
     if ( type != BACKUP_DS )
     {
+        //Common attributes
+        string orph;
+
         if ( vatt->vector_value("ALLOW_ORPHANS", orph) == -1 )
         {
             orph = "NO";
         }
 
         replace_template_attribute("ALLOW_ORPHANS", orph);
+
+        bool ps;
+
+        if (vatt->vector_value("PERSISTENT_SNAPSHOTS", ps) == -1)
+        {
+            ps = true;
+        }
+
+        if (ps)
+        {
+            replace_template_attribute("PERSISTENT_SNAPSHOTS", "YES");
+        }
+        else
+        {
+            replace_template_attribute("PERSISTENT_SNAPSHOTS", "NO");
+        }
     }
 
     return 0;
@@ -947,7 +975,7 @@ int Datastore::from_xml(const string& xml)
 /* ------------------------------------------------------------------------ */
 /* ------------------------------------------------------------------------ */
 
-int Datastore::post_update_template(string& error_str)
+int Datastore::post_update_template(string& error_str, Template *old_tmpl)
 {
     string new_ds_mad;
     string new_tm_mad;
@@ -960,6 +988,40 @@ int Datastore::post_update_template(string& error_str)
     Image::DiskType old_disk_type = disk_type;
     string          old_tm_mad    = tm_mad;
     string          old_ds_mad    = ds_mad;
+
+    static std::vector<std::string> ro_options = {
+        "LVM_THIN_ENABLE",
+        "NFS_AUTO_ENABLE",
+        "NFS_AUTO_HOST",
+        "NFS_AUTO_PATH",
+        "NFS_AUTO_OPTS"
+    };
+
+    /* ---------------------------------------------------------------------- */
+    /* Check read-only values (for images > 0)                                */
+    /* ---------------------------------------------------------------------- */
+    if ( images_size() > 0 && old_tmpl != nullptr)
+    {
+        for (const auto& opt : ro_options)
+        {
+            string old_v, new_v;
+
+            get_template_attribute(opt, new_v);
+
+            old_tmpl->get(opt, old_v);
+
+            if ( old_v != new_v )
+            {
+                ostringstream oss;
+
+                oss << "Cannot update option " << opt
+                    << " in a datastore with existing images";
+
+                error_str = oss.str();
+                return -1;
+            }
+        }
+    }
 
     /* ---------------------------------------------------------------------- */
     /* Set the TYPE of the Datastore (class & template)                       */

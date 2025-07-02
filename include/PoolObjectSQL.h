@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -110,6 +110,7 @@ public:
             case VNTEMPLATE:     return "VNTEMPLATE"; break;
             case HOOK:           return "HOOK"; break;
             case BACKUPJOB:      return "BACKUPJOB"; break;
+            case SCHEDULEDACTION:return "SCHEDULEDACTION"; break;
             default:             return "";
         }
     };
@@ -137,6 +138,7 @@ public:
         else if ( type == "VNTEMPLATE" )     return VNTEMPLATE;
         else if ( type == "HOOK" )           return HOOK;
         else if ( type == "BACKUPJOB" )      return BACKUPJOB;
+        else if ( type == "SCHEDULEDACTION" )return SCHEDULEDACTION;
         else                                 return NONE;
     };
 
@@ -720,7 +722,7 @@ protected:
      *    @param error string describing the error if any
      *    @return 0 on success
      */
-    virtual int post_update_template(std::string& error)
+    virtual int post_update_template(std::string& error, Template *_old_tmpl)
     {
         return 0;
     };

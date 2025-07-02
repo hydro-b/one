@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -17,7 +17,10 @@
 #ifndef HOST_SHARE_CAPACITY_H_
 #define HOST_SHARE_CAPACITY_H_
 
+#include "Template.h"
 #include "Attribute.h"
+
+#include "VirtualMachine.h"
 
 /* ------------------------------------------------------------------------ */
 /* ------------------------------------------------------------------------ */
@@ -48,11 +51,64 @@ struct HostShareCapacity
     long long mem;
     long long disk;
 
+    bool is_q35;
+
+    std::string vgpu_profile;
+
     std::vector<VectorAttribute *> pci;
 
     VectorAttribute * topology;
 
     std::vector<VectorAttribute *> nodes;
+
+    /**
+     *  Get the VM capacity from the template
+     *  @param vid the VM ID
+     *  @param tmpl the VM template. Warning: the HostShareCapacity use pointers to
+     *        the tmpl, so it must exist for the lifetime of the HostareCapacity
+     */
+    void set(int vid, Template& tmpl)
+    {
+        float fcpu;
+
+        pci.clear();
+
+        nodes.clear();
+
+        vgpu_profile = "";
+
+        is_q35 = false;
+
+        vmid = vid;
+
+        if ((tmpl.get("MEMORY", mem) == false) ||
+            (tmpl.get("CPU", fcpu) == false))
+        {
+            cpu = 0;
+            mem = 0;
+            disk = 0;
+
+            vcpu = 0;
+
+            return;
+        }
+
+        cpu = (int) (fcpu * 100); //%
+        mem = mem * 1024;  //Kb
+        disk = 0;
+
+        tmpl.get("VCPU", vcpu);
+
+        tmpl.get("PCI", pci);
+
+        tmpl.get("NUMA_NODE", nodes);
+
+        topology = tmpl.get("TOPOLOGY");
+
+        is_q35 = VirtualMachine::test_machine_type(tmpl.get("OS"), "q35");
+
+        return;
+    }
 };
 
 #endif /*HOST_SHARE_CAPACITY_H_*/

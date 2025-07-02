@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -35,6 +35,7 @@
 #include "ImagePool.h"
 #include "MarketPlacePool.h"
 #include "MarketPlaceAppPool.h"
+#include "PlanPool.h"
 #include "SecurityGroupPool.h"
 #include "VdcPool.h"
 #include "VirtualNetworkPool.h"
@@ -702,6 +703,10 @@ int ClusterDelete::drop(std::unique_ptr<PoolObjectSQL> object, bool r, RequestAt
     {
         return rc;
     }
+
+    auto plan_pool = Nebula::instance().get_planpool();
+    auto plan = plan_pool->get(oid);
+    rc += plan_pool->drop(plan.get());
 
     aclm->del_cid_rules(oid);
 

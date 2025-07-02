@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -15,6 +15,25 @@
 # See the License for the specific language governing permissions and        #
 # limitations under the License.                                             #
 # -------------------------------------------------------------------------- #
+#
+
+ONE_LOCATION = ENV['ONE_LOCATION'] unless defined?(ONE_LOCATION)
+
+if !ONE_LOCATION
+    LIB_LOCATION      ||= '/usr/lib/one'
+    RUBY_LIB_LOCATION ||= '/usr/lib/one/ruby'
+    GEMS_LOCATION     ||= '/usr/share/one/gems'
+else
+    LIB_LOCATION      ||= ONE_LOCATION + '/lib'
+    RUBY_LIB_LOCATION ||= ONE_LOCATION + '/lib/ruby'
+    GEMS_LOCATION     ||= ONE_LOCATION + '/share/gems'
+end
+
+# %%RUBYGEMS_SETUP_BEGIN%%
+require 'load_opennebula_paths'
+# %%RUBYGEMS_SETUP_END%%
+
+$LOAD_PATH << RUBY_LIB_LOCATION
 
 require 'net/http'
 require 'uri'
@@ -24,7 +43,7 @@ require 'rexml/document'
 require 'time'
 require 'digest/md5'
 
-require_relative '../common/lxd'
+require_relative 'lxd'
 
 #-------------------------------------------------------------------------------
 #
@@ -49,13 +68,14 @@ class LinuxContainersMarket
         :fs            => 'ext4',
         :format        => 'raw',
         :agent         => 'OpenNebula',
-        :tested_apps   => ['alpine', 'alt', 'centos', 'rockylinux', 'almalinux', 'oracle',
-                           'debian', 'ubuntu', 'fedora', 'devuan', 'opensuse', 'amazonlinux'],
+        :tested_apps   => ['almalinux', 'alpine', 'amazonlinux', 'debian', 'devuan',
+                           'fedora', 'opensuse', 'oracle', 'rockylinux', 'ubuntu'],
         :skip_untested => 'yes',
         :memory        => '768',
         :cpu           => 1,
         :vcpu          => 2,
-        :privileged    => true
+        :privileged    => true,
+        :raw           => 'lxc.apparmor.profile=unconfined'
     }
 
     def initialize(options = {})
@@ -72,9 +92,7 @@ class LinuxContainersMarket
     # Get container information
     def get(path)
         uri = URI(@options[:url] + path)
-
-        req = Net::HTTP::Get.new(uri.request_uri)
-        req['User-Agent'] = @options[:agent]
+        req = Net::HTTP::Get.new(uri.request_uri, { 'User-Agent' => @options[:agent] })
 
         response = @http_client.request(req)
 
@@ -119,8 +137,19 @@ class LinuxContainersMarket
         image_list['products'].each do |img, img_data|
             distro, version, arch, variant = img.split(':')
 
-            next if variant != 'default' || arch != 'amd64'
+            next if variant != 'default' || (arch != 'amd64' && arch != 'arm64')
             next if @options[:skip_untested] == 'yes' && !@options[:tested_apps].include?(distro)
+
+            case arch
+            when 'arm64'
+                arch = 'aarch64'
+                name = "#{distro}_#{version} (#{arch})"
+            when 'amd64'
+                arch = 'x86_64'
+                name = "#{distro}_#{version}"
+            end
+
+            @options[:arch] = arch
 
             # Use the last version for each container
             regtime = img_data['versions'].to_a.last[0]
@@ -134,7 +163,7 @@ class LinuxContainersMarket
             builddate = DateTime.strptime(regtime, '%Y%m%d_%H:%M').to_time.to_i
 
             data = {
-                'NAME'        => "#{distro}_#{version} - LXD",
+                'NAME'        => name,
                 'SIZE'        => @options[:sizemb],
                 'PUBLISHER'   => @options[:url],
                 'FORMAT'      => @options[:format],
@@ -147,7 +176,9 @@ class LinuxContainersMarket
                 'TYPE'        => 'IMAGE',
                 'DESCRIPTION' =>  "Downloaded from #{@options[:url]}",
                 'TAGS'        => '',
-                'LINK'        => "#{@options[:url]}#{path}"
+                'LINK'        => "#{@options[:url]}#{path}",
+                'ARCHITECTURE'=> arch,
+                'HYPERVISOR'  => 'lxc'
             }
 
             tmpl = ''

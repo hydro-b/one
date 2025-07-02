@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -31,23 +31,7 @@ else
 end
 
 # %%RUBYGEMS_SETUP_BEGIN%%
-if File.directory?(GEMS_LOCATION)
-    real_gems_path = File.realpath(GEMS_LOCATION)
-    if !defined?(Gem) || Gem.path != [real_gems_path]
-        $LOAD_PATH.reject! {|l| l =~ /vendor_ruby/ }
-
-        # Suppress warnings from Rubygems
-        # https://github.com/OpenNebula/one/issues/5379
-        begin
-            verb = $VERBOSE
-            $VERBOSE = nil
-            require 'rubygems'
-            Gem.use_paths(real_gems_path)
-        ensure
-            $VERBOSE = verb
-        end
-    end
-end
+require 'load_opennebula_paths'
 # %%RUBYGEMS_SETUP_END%%
 
 $LOAD_PATH << RUBY_LIB_LOCATION
@@ -91,23 +75,25 @@ class InformationManagerDriver < OpenNebulaDriver
                                               log_method(input[:host_id]))
 
             if rc != 0
-                write_respond(:START_MONITOR,
-                              RESULT[:failure],
-                              input[:host_id],
-                              'Could not update remotes')
+                line = Zlib::Deflate.deflate('Could not update remotes', Zlib::BEST_COMPRESSION)
+                line = Base64.strict_encode64(line)
+                send_message(:START_MONITOR,
+                             RESULT[:failure],
+                             input[:host_id],
+                             line)
                 return
             end
         end
 
-        result, info = do_action(input[:im_mad],
+        do_action(input[:im_mad],
                   input[:host_id],
                   input[:hostname],
                   :START_MONITOR,
                   :stdin       => input[:stdin],
                   :script_name => 'run_monitord_client',
-                  :respond     => false)
-
-        write_respond(:START_MONITOR, result, input[:host_id], info)
+                  :respond     => true,
+                  :zip         => true,
+                  :base64      => true)
     end
 
     def stop_monitor(_not_used, _hostid, _timestamp, zaction64)
@@ -115,15 +101,15 @@ class InformationManagerDriver < OpenNebulaDriver
 
         return if rc == -1
 
-        result, info = do_action(input[:im_mad],
+        do_action(input[:im_mad],
                   input[:host_id],
                   input[:hostname],
                   :STOP_MONITOR,
                   :script_name => 'stop_monitord_client',
                   :stdin       => input[:stdin],
-                  :respond     => false)
-
-        write_respond(:STOP_MONITOR, result, input[:host_id], info)
+                  :respond     => true,
+                  :zip         => true,
+                  :base64      => true)
     end
 
     private
@@ -145,58 +131,38 @@ class InformationManagerDriver < OpenNebulaDriver
 
         config_xml.add_element(hid_elem)
 
-        [0, {:im_mad   => im_mad,
-             :host_id  => host_id,
-             :hostname => hostname,
-             :stdin    => config_xml.to_s}]
-
+        [0, { :im_mad   => im_mad,
+              :host_id  => host_id,
+              :hostname => hostname,
+              :stdin    => config_xml.to_s }]
     rescue StandardError => e
-        write_respond(msg_type,
-                      RESULT[:failure],
-                      host_id,
-                      e.message)
+        line = Zlib::Deflate.deflate(e.message, Zlib::BEST_COMPRESSION)
+        line = Base64.strict_encode64(line)
+        send_message(msg_type,
+                     RESULT[:failure],
+                     host_id,
+                     line)
 
         [-1, {}]
     end
 
     # Sends a log message to ONE. The +message+ can be multiline, it will
     # be automatically splitted by lines.
-    def log(id, message, not_used=true)
-        msg = message.strip
-
-        msg.each_line do |line|
-            severity = 'I'
-
-            m = line.match(/^(ERROR|DEBUG|INFO):(.*)$/)
-
-            if m
-                line = m[2]
-
-                case m[1]
-                when 'ERROR'
-                    severity = 'E'
-                when 'DEBUG'
-                    severity = 'D'
-                when 'INFO'
-                    severity = 'I'
-                else
-                    severity = 'I'
-                end
-            end
-
-            write_respond('LOG', severity, id, line.strip)
-        end
-    end
-
-    def write_respond(action="-", result=RESULT[:failure], id="-", info="-")
-        info = Zlib::Deflate.deflate(info, Zlib::BEST_COMPRESSION)
-        info = Base64.strict_encode64(info)
-
-        @stdout_mutex.synchronize {
-            STDOUT.puts "#{action} #{result} #{id} #{Time.now.to_i} #{info}"
-            STDOUT.flush
+    def log_method(num, _options = {})
+        lambda {|message, all = true|
+            log(num, message, all, :compress => true, :encode => true)
         }
     end
+
+    # rubocop:disable Metrics/ParameterLists
+    def send_message(action = '-', result = RESULT[:failure], id = '-', info = '-')
+        @send_mutex.synchronize do
+            STDOUT.puts "#{action} #{result} #{id} #{Time.now.to_i} #{info}"
+            STDOUT.flush
+        end
+    end
+    # rubocop:enable Metrics/ParameterLists
+
 end
 
 # Information Manager main program

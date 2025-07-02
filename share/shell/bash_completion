@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -251,7 +251,7 @@ _onedb() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="backup version history restore upgrade fsck vcenter-one54 patch
+    opts="backup version history restore upgrade fsck patch
             sqlite2mysql purge-history purge-done change-body change-history
             update-body update-history show-body show-history create-index"
     cmd=onedb
@@ -398,14 +398,14 @@ _onehost() {
         pprev="${COMP_WORDS[COMP_CWORD-2]}"
     fi
     opts="create delete enable disable offline update sync list show top flush
-            rename importvm forceupdate monitoring"
+            rename forceupdate monitoring"
     cmd=onehost
     if [ "$COMP_CWORD" == 1 ]; then
         COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
         return 0
     elif [ "$COMP_CWORD" == 2 ]; then
         case "$prev" in
-        delete|disable|offline|update|sync|show|flush|rename|importvm| \
+        delete|disable|offline|update|sync|show|flush|rename| \
         forceupdate|monitoring)
             _complete $cmd
         ;;
@@ -435,7 +435,7 @@ _oneimage() {
     fi
     opts="create clone delete persistent nonpersistent update enable chtype
             disable chgrp chown chmod rename snapshot-delete snapshot-revert
-            snapshot-flatten list show top lock unlock orphans dockerfile restore"
+            snapshot-flatten list show top lock unlock orphans restore"
     cmd=oneimage
     if [ "$COMP_CWORD" == 1 ]; then
         COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -654,25 +654,6 @@ _oneuser() {
     fi
 }
 
-_onevcenter() {
-    local cur prev opts cmd
-    COMPREPLY=()
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="list list_all import import_defaults hosts cleartags"
-    cmd=onevcenter
-    if [ "$COMP_CWORD" == 1 ]; then
-        COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-        return 0
-    elif [ "$COMP_CWORD" == 2 ]; then
-        case "$prev" in
-        cleartags)
-            _complete onevm
-        ;;
-        esac
-    fi
-}
-
 _onevdc() {
     local cur prev opts cmd
     COMPREPLY=()
@@ -730,10 +711,11 @@ _onevm() {
     opts="create update hold release disk-saveas terminate undeploy poweroff
             reboot deploy migrate stop suspend resume recover disk-attach
             disk-detach nic-attach nic-detach chgrp chown chmod resched unresched
-            rename snapshot-create snapshot-revert snapshot-delete disk-snapshot-create
-            disk-snapshot-revert disk-snapshot-delete disk-snapshot-rename disk-resize
-            list show top resize save updateconf lock unlock create-chart
-            delete-chart update-chart backup restore ssh port-forward backupmode"
+            rename snapshot-create snapshot-revert snapshot-delete snapshot-list
+            disk-snapshot-create disk-snapshot-revert disk-snapshot-delete
+            disk-snapshot-rename disk-snapshot-list disk-resize list show top
+            resize save updateconf lock unlock create-chart delete-chart
+            update-chart backup restore ssh port-forward backupmode"
     cmd=onevm
     if [ "$COMP_CWORD" == 1 ]; then
         COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -742,10 +724,10 @@ _onevm() {
         case "$prev" in
         update|hold|release|disk-saveas|terminate|show|delete|resume|recover| \
         disk-attach|disk-detach|nic-attach|nic-detach|chgrp|chown|chmod|resched| \
-        unresched|rename|snapshot-create|snapshot-revert|snapshot-delete| \
+        unresched|rename|snapshot-create|snapshot-revert|snapshot-delete|snapshot-list| \
         disk-snapshot-create|disk-snapshot-delete|disk-snapshot-revert| \
-        disk-snapshot-rename|disk-resize|save|updateconf|lock|unlock|create-chart| \
-        delete-chart|update-chart|backup|restore|ssh|port-forward|backupmode)
+        disk-snapshot-rename|disk-snapshot-list|disk-resize|save|updateconf|lock|unlock| \
+        create-chart|delete-chart|update-chart|backup|restore|ssh|port-forward|backupmode)
             _complete $cmd
         ;;
         undeploy|poweroff|reboot|shutdown|suspend|stop|migrate)
@@ -926,7 +908,6 @@ complete -F _onesecgroup onesecgroup
 complete -F _oneshowback oneshowback
 complete -F _onetemplate onetemplate
 complete -F _oneuser oneuser
-complete -F _onevcenter onevcenter
 complete -F _onevdc onevdc
 complete -F _onevm onevm
 complete -F _onevmgroup onevmgroup

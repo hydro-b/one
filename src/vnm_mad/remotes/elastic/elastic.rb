@@ -1,6 +1,6 @@
 # rubocop:disable Naming/FileName
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -48,7 +48,7 @@ class ElasticDriver < VNMMAD::VNMDriver
         raise rc if OpenNebula.is_error?(rc)
 
         unless @host.has_elements?('TEMPLATE/PROVISION/ID')
-            OpenNebula.log_error("No ID in PROVISION for host #{host_id}")
+            OpenNebula::DriverLogger.log_error("No ID in PROVISION for host #{host_id}")
             exit 1
         end
 
@@ -193,11 +193,14 @@ class ElasticDriver < VNMMAD::VNMDriver
         when 'vultr_virtual', 'vultr_metal'
             require 'vultr_vnm'
             VultrProvider.new(provider, host)
+        when 'scaleway'
+            require 'scaleway_vnm'
+            ScalewayProvider.new(provider, host)
         else
             nil
         end
     rescue StandardError => e
-        OpenNebula.log_error(
+        OpenNebula::DriverLogger.log_error(
             "Error creating provider #{provider.body['provider']}:#{e.message}"
         )
         nil

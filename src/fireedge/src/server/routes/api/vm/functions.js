@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -13,8 +13,8 @@
  * See the License for the specific language governing permissions and       *
  * limitations under the License.                                            *
  * ------------------------------------------------------------------------- */
-const { randomBytes, createCipheriv } = require('crypto')
-
+const btoa = require('btoa')
+const { createHash, createCipheriv } = require('crypto')
 const { defaults, httpCodes } = require('server/utils/constants')
 const {
   httpResponse,
@@ -30,7 +30,14 @@ const { USER_INFO } = userActions
 const { VM_INFO } = vmActions
 
 const { ok, unauthorized, internalServerError, badRequest } = httpCodes
-const { defaultEmptyFunction, defaultCommandVM, defaultTypeCrypto } = defaults
+const {
+  defaultEmptyFunction,
+  defaultCommandVM,
+  defaultTypeCrypto,
+  defaultHash,
+  keysRDP,
+  keysVNC,
+} = defaults
 
 const appConfig = getSunstoneConfig()
 const prependCommand = appConfig.sunstone_prepend || ''
@@ -96,7 +103,7 @@ const generateGuacamoleSession = (
   xmlrpc = defaultEmptyFunction
 ) => {
   const { id: userAuthId } = userData
-  const { id: vmId, type } = params
+  const { id: vmId, type, download } = params
   const ensuredType = `${type}`.toLowerCase()
 
   if (!['vnc', 'ssh', 'rdp'].includes(ensuredType)) {
@@ -116,86 +123,116 @@ const generateGuacamoleSession = (
   const { username } = serverAdmin
   const oneClient = xmlrpc(`${username}:${username}`, authToken)
 
+  const callbackVmInfo = (vmInfoErr, VM, USER) => {
+    if (vmInfoErr || !VM) {
+      res.locals.httpCode = httpResponse(
+        !VM ? internalServerError : unauthorized,
+        vmInfoErr
+      )
+      next()
+
+      return
+    }
+
+    const settings = {
+      vnc: () => getVncSettings(VM),
+      ssh: () => getSshSettings(VM, USER),
+      rdp: () => getRdpSettings(VM),
+    }[ensuredType]?.() ?? { error: '' }
+
+    if (settings.error) {
+      res.locals.httpCode = httpResponse(badRequest, settings.error)
+      next()
+
+      return
+    }
+
+    const connection = {
+      connection: {
+        type: ensuredType,
+        settings: {
+          security: 'any',
+          'ignore-cert': 'true',
+          'enable-drive': 'true',
+          'create-drive-path': 'true',
+          ...settings,
+        },
+      },
+    }
+
+    if (download) {
+      const contentFile = {
+        ...connection.connection.settings,
+        protocol: ensuredType,
+      }
+
+      const encodedData = btoa(
+        Object.entries(contentFile)
+          .map(([key, value]) => {
+            let rtn
+            const keys = type === 'rdp' ? keysRDP : keysVNC
+            // eslint-disable-next-line no-prototype-builtins
+            if (keys.hasOwnProperty(key)) {
+              const getValue =
+                value !== null && typeof value !== 'undefined'
+                  ? value
+                  : keys[key].value
+              const parseValue =
+                typeof getValue === 'boolean'
+                  ? `${+(keys[key].reverse ? !getValue : getValue)}`
+                  : `${getValue}`
+
+              rtn = `${keys[key].key}${parseValue}`
+            }
+
+            return rtn
+          })
+          .filter(Boolean)
+          .join('\n')
+      )
+
+      res.locals.httpCode = httpResponse(ok, encodedData)
+    } else {
+      const wsToken = JSON.stringify(encryptConnection(connection))
+      const encodedWsToken = Buffer.from(wsToken).toString('base64')
+
+      res.locals.httpCode = httpResponse(ok, encodedWsToken)
+    }
+
+    next()
+  }
+
+  const callbackUserInfo = (userInfoErr, { USER } = {}) => {
+    if (userInfoErr || !USER) {
+      res.locals.httpCode = httpResponse(badRequest, userInfoErr)
+      next()
+
+      return
+    }
+
+    // get VM information by id
+    oneClient({
+      action: VM_INFO,
+      parameters: [parseInt(vmId, 10), true],
+      callback: (vmInfoErr, { VM } = {}) => callbackVmInfo(vmInfoErr, VM, USER),
+    })
+  }
+
   // get authenticated user
   oneClient({
     action: USER_INFO,
     parameters: [parseInt(userAuthId, 10), true],
-    callback: (userInfoErr, { USER } = {}) => {
-      if (userInfoErr || !USER) {
-        res.locals.httpCode = httpResponse(badRequest, userInfoErr)
-        next()
-      }
-
-      // get VM information by id
-      oneClient({
-        action: VM_INFO,
-        parameters: [parseInt(vmId, 10), true],
-        callback: (vmInfoErr, { VM } = {}) => {
-          if (vmInfoErr || !VM) {
-            res.locals.httpCode = httpResponse(unauthorized, vmInfoErr)
-            next()
-          }
-
-          const settings = {
-            vnc: () => getVncSettings(VM),
-            ssh: () => getSshSettings(VM, USER),
-            rdp: () => getRdpSettings(VM),
-          }[ensuredType]?.() ?? { error: '' }
-
-          if (settings.error) {
-            res.locals.httpCode = httpResponse(badRequest, settings.error)
-            next()
-          }
-
-          // const minutesToAdd = 1
-          // const currentDate = new Date()
-          // const expiration = currentDate.getTime() + minutesToAdd * 60000
-
-          const connection = {
-            // expiration,
-            connection: {
-              type: ensuredType,
-              settings: {
-                security: 'any',
-                'ignore-cert': 'true',
-                'enable-drive': 'true',
-                'create-drive-path': 'true',
-                ...settings,
-              },
-            },
-          }
-
-          const wsToken = JSON.stringify(encryptConnection(connection))
-          const encodedWsToken = Buffer.from(wsToken).toString('base64')
-
-          res.locals.httpCode = httpResponse(ok, encodedWsToken)
-          next()
-        },
-      })
-    },
+    callback: callbackUserInfo,
   })
 }
 
 const getVncSettings = (vmInfo) => {
   const config = {}
 
-  if (`${vmInfo.USER_TEMPLATE?.HYPERVISOR}`.toLowerCase() === 'vcenter') {
-    const esxHost = vmInfo?.MONITORING?.VCENTER_ESX_HOST
-
-    if (!esxHost) {
-      return {
-        error: `Could not determine the vCenter ESX host where
-        the VM is running. Wait till the VCENTER_ESX_HOST attribute is
-        retrieved once the host has been monitored`,
-      }
-    }
-
-    config.hostname = esxHost
-  }
-
   if (!config.hostname) {
-    const lastHistory = [vmInfo.HISTORY_RECORDS?.HISTORY ?? []].flat().at(-1)
-    config.hostname = lastHistory?.HOSTNAME ?? 'localhost'
+    const data = [].concat(...[vmInfo.HISTORY_RECORDS?.HISTORY ?? []])
+    const lastRecord = data[data.length - 1]
+    config.hostname = lastRecord?.HOSTNAME ?? 'localhost'
   }
 
   config.port = vmInfo.TEMPLATE?.GRAPHICS?.PORT ?? '5900'
@@ -207,17 +244,17 @@ const getVncSettings = (vmInfo) => {
 const getSshSettings = (vmInfo, authUser) => {
   const config = {}
 
-  const nics = [
-    vmInfo.TEMPLATE?.NIC ?? [],
-    vmInfo.TEMPLATE?.NIC_ALIAS ?? [],
-  ].flat()
+  const nics = [].concat(
+    ...[vmInfo.TEMPLATE?.NIC ?? [], vmInfo.TEMPLATE?.NIC_ALIAS ?? []]
+  )
 
   const nicWithExternalPortRange = nics.find((nic) => !nic.EXTERNAL_PORT_RANGE)
   const { EXTERNAL_PORT_RANGE } = nicWithExternalPortRange ?? {}
 
   if (EXTERNAL_PORT_RANGE) {
-    const lastHistory = [vmInfo.HISTORY_RECORDS?.HISTORY ?? []].flat().at(-1)
-    const lastHostname = lastHistory?.HOSTNAME
+    const data = [].concat(...[vmInfo.HISTORY_RECORDS?.HISTORY ?? []])
+    const lastRecord = data[data.length - 1]
+    const lastHostname = lastRecord?.HOSTNAME
 
     if (lastHostname) {
       config.hostname = lastHostname
@@ -250,10 +287,9 @@ const getSshSettings = (vmInfo, authUser) => {
 const getRdpSettings = (vmInfo) => {
   const config = {}
 
-  const nics = [
-    vmInfo.TEMPLATE?.NIC ?? [],
-    vmInfo.TEMPLATE?.NIC_ALIAS ?? [],
-  ].flat()
+  const nics = [].concat(
+    ...[vmInfo.TEMPLATE?.NIC ?? [], vmInfo.TEMPLATE?.NIC_ALIAS ?? []]
+  )
 
   const nicWithRdp = nics.find(({ RDP }) => `${RDP}`.toLowerCase() === 'yes')
   config.hostname = nicWithRdp?.EXTERNAL_IP ?? nicWithRdp?.IP
@@ -261,7 +297,7 @@ const getRdpSettings = (vmInfo) => {
   if (!config.hostname) {
     return { error: 'Wrong configuration. Cannot find a NIC with RDP' }
   }
-
+  config.security = vmInfo.TEMPLATE?.CONTEXT?.RDP_SECURITY ?? 'rdp'
   config.port = vmInfo.TEMPLATE?.CONTEXT?.RDP_PORT ?? '3389'
   config.username = vmInfo.TEMPLATE?.CONTEXT?.USERNAME
   config.password = vmInfo.TEMPLATE?.CONTEXT?.PASSWORD
@@ -290,16 +326,15 @@ const getRdpSettings = (vmInfo) => {
   config['disable-glyph-caching'] =
     nicWithRdp?.RDP_DISABLE_GLYPH_CACHING?.toLowerCase() === 'yes'
 
-  if (config.username && config.password) config.security = 'nla'
-
   return config
 }
 
 const encryptConnection = (data) => {
-  const iv = randomBytes(16)
+  const { hash, digest } = defaultHash
   const key = global.paths.FIREEDGE_KEY
+  const keyBuffer = Buffer.from(key, digest)
+  const iv = createHash(hash).update(keyBuffer).digest().slice(0, 16)
   const cipher = createCipheriv(defaultTypeCrypto, key, iv)
-
   const ensuredData = typeof data === 'string' ? data : JSON.stringify(data)
   let value = cipher.update(ensuredData, 'utf-8', 'base64')
   value += cipher.final('base64')

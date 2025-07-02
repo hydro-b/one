@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -90,6 +90,12 @@ protected:
     void notify_request(int id, bool result, const std::string& message);
 
     static Log::MessageType log_type(char type);
+
+    /**
+     *  Callback called when the driver is reconnected. Override this function
+     *  to perform any actions when the driver is reconnected
+     */
+    virtual void reconnected() {};
 
 private:
     std::map<std::string, std::unique_ptr<D>> drivers;
@@ -207,7 +213,10 @@ int DriverManager<D>::start(std::string& error)
 {
     for (auto& driver : drivers)
     {
+        driver.second->set_reconnect_callback(std::bind(&DriverManager<D>::reconnected, this));
+
         auto rc = driver.second->start(error);
+
         if (rc != 0)
         {
             NebulaLog::error("DrM", "Unable to start driver '" + driver.first

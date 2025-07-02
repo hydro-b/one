@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -25,12 +25,10 @@ int ScheduledActionPool::allocate(PoolObjectSQL::ObjectType type,
                                   const VectorAttribute * va,
                                   string& error_str)
 {
-    auto sched = new ScheduledAction(type, parent_id);
+    ScheduledAction sched {type, parent_id};
 
-    if (sched->parse(va, origin, error_str) != 0)
+    if (sched.parse(va, origin, error_str) != 0)
     {
-        delete sched;
-
         NebulaLog::error("SCH", error_str);
         return -1;
     }

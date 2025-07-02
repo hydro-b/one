@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -154,17 +154,6 @@ public:
         return PoolSQL::dump(oss, "DATASTORE_POOL", "body", one_db::ds_table,
                              where, sid, eid, desc);
     };
-
-    /**
-     *  Lists the Datastore ids
-     *  @param oids a vector with the oids of the objects.
-     *
-     *  @return 0 on success
-     */
-    int list(std::vector<int>& oids)
-    {
-        return PoolSQL::list(oids, one_db::ds_table);
-    }
 
     /**
      *  Adds to the disk the datastore inherit attributes and conf values

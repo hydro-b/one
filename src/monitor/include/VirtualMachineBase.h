@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -73,8 +73,6 @@ public:
 
     bool is_resume() const { return resume; }
 
-    bool is_public_cloud() const { return public_cloud; }
-
     bool is_active() const { return active; }
 
     /**
@@ -108,7 +106,6 @@ protected:
     bool resched;
     bool resume;
     bool active;
-    bool public_cloud;
 
     long int    memory;
     float       cpu;

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -96,6 +96,14 @@ class OneMarketPlaceAppHelper < OpenNebulaHelper::OneHelper
                 OpenNebulaHelper.unit_to_str(d['SIZE'].to_i, {}, 'M')
             end
 
+            column :ARCH, 'OS Architecture', :size =>7 do |d|
+                d['TEMPLATE']['ARCHITECTURE']
+            end
+
+            column :HYPERVISOR, 'Hypervisor to use for VMs', :left, :size =>10 do |d|
+                d['TEMPLATE']['HYPERVISOR']
+            end
+
             column :STAT, 'State of the app', :size=>4 do |d|
                 OneMarketPlaceAppHelper.state_to_str(d['STATE'])
             end
@@ -121,6 +129,8 @@ class OneMarketPlaceAppHelper < OpenNebulaHelper::OneHelper
                     :NAME,
                     :VERSION,
                     :SIZE,
+                    :ARCH,
+                    :HYPERVISOR,
                     :STAT,
                     :TYPE,
                     :REGTIME,
@@ -547,7 +557,7 @@ class OneMarketPlaceAppHelper < OpenNebulaHelper::OneHelper
             # Iterate all the roles to ask for the marketplace
             body['roles'].each do |role|
                 # Read role VM template information from OpenNebula
-                template = Template.new_with_id(role['vm_template'], @client)
+                template = Template.new_with_id(role['template_id'], @client)
                 rc       = template.info
 
                 return rc if OpenNebula.is_error?(rc)
@@ -581,7 +591,7 @@ class OneMarketPlaceAppHelper < OpenNebulaHelper::OneHelper
             # Do not ask for marketplaces, just fill templates information
             body['roles'].each do |role|
                 # Read role VM template information from OpenNebula
-                template = Template.new_with_id(role['vm_template'], @client)
+                template = Template.new_with_id(role['template_id'], @client)
                 rc       = template.info
 
                 return rc if OpenNebula.is_error?(rc)

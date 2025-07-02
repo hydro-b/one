@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -48,7 +48,16 @@ request_execute(xmlrpc_c::paramList const& paramList,
         return;
     }
 
-    auto group = pool->get<Group>(id);
+    vector<VectorAttribute*> vm_quotas;
+    quota_tmpl.get("VM", vm_quotas);
+
+    for (auto* va : vm_quotas)
+    {
+        va->replace("GID", id);
+    }
+
+    auto gpool = static_cast<GroupPool *>(pool);
+    auto group = gpool->get(id);
 
     if ( group == nullptr )
     {
@@ -59,16 +68,15 @@ request_execute(xmlrpc_c::paramList const& paramList,
 
     rc = group->quota.set(&quota_tmpl, att.resp_msg);
 
-    static_cast<GroupPool *>(pool)->update_quotas(group.get());
-
     if ( rc != 0 )
     {
         failure_response(ACTION, att);
+        return;
     }
-    else
-    {
-        success_response(id, att);
-    }
+
+    gpool->update_quotas(group.get());
+
+    success_response(id, att);
 }
 
 /* -------------------------------------------------------------------------- */

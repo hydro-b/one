@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -19,6 +19,7 @@
 #include "Quotas.h"
 #include "Nebula.h"
 #include "VirtualMachinePool.h"
+#include "SchedulerManager.h"
 
 using namespace std;
 
@@ -314,6 +315,8 @@ void DispatchManager::trigger_resubmit(int vid)
             vm->set_deploy_id(""); //reset the deploy-id
 
             vmpool->update(vm.get());
+
+            Nebula::instance().get_sm()->trigger_place();
         }
     });
 }

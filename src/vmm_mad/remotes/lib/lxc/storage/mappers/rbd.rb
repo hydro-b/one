@@ -1,7 +1,7 @@
 #!/usr/bin/ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -45,7 +45,7 @@ class RBDMapper
         rc, out, err = Command.execute("#{@map_cmd} #{dsrc}", true, 1)
 
         unless rc.zero?
-            OpenNebula.log_error("#{__method__}: #{err}")
+            OpenNebula::DriverLogger.log_error("#{__method__}: #{err}")
             return
         end
 
@@ -74,7 +74,7 @@ class RBDMapper
 
         src
     rescue StandardError
-        OpenNebula.log_error("#{__method__}: Cannot set disk source")
+        OpenNebula::DriverLogger.log_error("#{__method__}: Cannot set disk source")
         nil
     end
 

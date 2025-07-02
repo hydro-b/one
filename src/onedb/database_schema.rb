@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -136,11 +136,19 @@ class OneDBBacKEnd
                 "search_token MEDIUMTEXT",
             acl: "oid INT PRIMARY KEY, userset BIGINT, resource BIGINT, " <<
                  "rights BIGINT, zone BIGINT, UNIQUE(userset, resource, rights, zone)"
+        },
+        "7.0.0" => {
+            vm_pool: "oid INTEGER PRIMARY KEY, name VARCHAR(128), " <<
+                "body MEDIUMTEXT, uid INTEGER, gid INTEGER, " <<
+                "state INTEGER, lcm_state INTEGER, resched INTEGER," <<
+                "owner_u INTEGER, group_u INTEGER, other_u INTEGER, short_body MEDIUMTEXT, " <<
+                "body_json JSON",
+            plan_pool: "cid INTEGER PRIMARY KEY, state INTEGER, body MEDIUMTEXT"
         }
     }
 
-    LATEST_DB_VERSION = '6.10.0'
-    LATEST_LOCAL_DB_VERSION = '6.10.0'
+    LATEST_DB_VERSION = '7.0.0'
+    LATEST_LOCAL_DB_VERSION = '7.0.0'
 
     def get_schema(type, version = nil)
         if !version

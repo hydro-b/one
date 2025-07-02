@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -41,6 +41,10 @@ const (
 	Bridge            NICKeys = "BRIDGE"
 	Filter            NICKeys = "FILTER"
 	IP                NICKeys = "IP"
+	IP6               NICKeys = "IP6"
+	IP6_ULA           NICKeys = "IP6_ULA"
+	IP6_LINK          NICKeys = "IP6_LINK"
+	IP6_GLOBAL        NICKeys = "IP6_GLOBAL"
 	MAC               NICKeys = "MAC"
 	Network           NICKeys = "NETWORK"
 	NetworkMask       NICKeys = "NETWORK_MASK"
@@ -63,7 +67,6 @@ const (
 	SchedRequirements NICKeys = "SCHED_REQUIREMENTS"
 	SchedRank         NICKeys = "SCHED_RANK"
 	Name              NICKeys = "NAME"
-	Parent            NICKeys = "PARENT"
 	External          NICKeys = "EXTERNAL"
 	ExternalIP        NICKeys = "EXTERNAL_IP"
 	Method            NICKeys = "METHOD"
@@ -71,12 +74,24 @@ const (
 	DNS               NICKeys = "DNS"
 	FloatingIP        NICKeys = "FLOATING_IP"
 	FloatingOnly      NICKeys = "FLOATING_ONLY"
+	AliasIDs          NICKeys = "ALIAS_IDS"
+	//NICAlias stuff
+	NICAliasVec      string  = "NIC_ALIAS"
+	NICAliasID       NICKeys = "ALIAS_ID"
+	NICAliasParent   NICKeys = "PARENT"
+	NICAliasParentID NICKeys = "PARENT_ID"
 )
 
 // NewNIC returns a structure disk entity to build
 func NewNIC() *NIC {
 	return &NIC{
 		dyn.Vector{XMLName: xml.Name{Local: NICVec}},
+	}
+}
+
+func NewNICAlias() *NIC {
+	return &NIC{
+		dyn.Vector{XMLName: xml.Name{Local: NICAliasVec}},
 	}
 }
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -76,7 +76,7 @@ class OpenNebulaVM
 
         return if wild?
 
-        # Sets the DISK ID of the root filesystem (LXC & Firecraker)
+        # Sets the DISK ID of the root filesystem (LXC)
         disk = @xml.element('//TEMPLATE/DISK')
 
         return unless disk
@@ -132,7 +132,7 @@ class OpenNebulaVM
             return true
         end
 
-        OpenNebula.log_warning('swap limiting via cgroups not supported')
+        OpenNebula::DriverLogger.log_warning('swap limiting via cgroups not supported')
     end
 
     def location
@@ -163,7 +163,7 @@ class OpenNebulaVM
         rc, _o, e = Command.execute_once(server, true)
 
         unless [nil, 0].include?(rc)
-            OpenNebula.log_error("#{__method__}: #{e}\nFailed to start vnc")
+            OpenNebula::DriverLogger.log_error("#{__method__}: #{e}\nFailed to start vnc")
             return
         end
 

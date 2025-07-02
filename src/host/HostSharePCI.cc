@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------*/
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems             */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems             */
 /*                                                                         */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may */
 /* not use this file except in compliance with the License. You may obtain */
@@ -21,11 +21,14 @@
 #include <stdexcept>
 #include <iomanip>
 #include <set>
+#include <map>
 
 #include <math.h>
 
 #include "HostSharePCI.h"
 #include "Host.h"
+#include "HostShare.h"
+#include "Nebula.h"
 
 using namespace std;
 
@@ -194,13 +197,12 @@ bool HostSharePCI::test(const vector<VectorAttribute *> &devs) const
 /*  Function to assign host PCI devices to a VM                               */
 /* -------------------------------------------------------------------------- */
 void HostSharePCI::pci_attribute(VectorAttribute *device, PCIDevice *pci,
-                                 bool set_prev)
+                                 bool set_prev, const std::string& vprofile)
 {
-    static vector<string> cp_attr = {"DOMAIN", "BUS", "SLOT", "FUNCTION",
-                                     "ADDRESS", "SHORT_ADDRESS"
-                                    };
+    static vector<string> cp_attr = {"DOMAIN", "BUS", "SLOT", "FUNCTION", "ADDRESS",
+                                     "SHORT_ADDRESS"};
 
-    static vector<string> cp_check_attr = {"NUMA_NODE", "UUID"};
+    static vector<string> cp_check_attr = {"NUMA_NODE", "UUID", "MDEV_MODE"};
 
     //Save previous address for migrations, clear on revert - failed migration
     if (set_prev)
@@ -233,12 +235,31 @@ void HostSharePCI::pci_attribute(VectorAttribute *device, PCIDevice *pci,
             device->replace(attr, vvalue);
         }
     }
+
+    //Set VGPU profile for NVIDIA devices
+    // PROFILE availability: vGPU profiles are daynamically updated by the NVIDIA
+    // driver. Monitoring values for profiles may not be up-to-date at this point
+    if (!vprofile.empty())
+    {
+        unsigned int vendor_id;
+        unsigned int class_id;
+
+        get_pci_value("VENDOR", pci->attrs, vendor_id);
+        get_pci_value("CLASS", pci->attrs, class_id);
+
+        // NVIDIA Corporation && 3D controller
+        if ((vendor_id == 0x10de) && (class_id == 0x0302))
+        {
+            device->replace("PROFILE", vprofile);
+        }
+    }
 }
 
 /* -------------------------------------------------------------------------- */
 
 bool HostSharePCI::add_by_addr(VectorAttribute *device, const string& short_addr,
-                               int vmid)
+                               std::map<unsigned int, std::set<unsigned int>>& palloc,
+                               HostShareCapacity &sr)
 {
     for (auto jt = pci_devices.begin(); jt != pci_devices.end(); jt++)
     {
@@ -254,11 +275,18 @@ bool HostSharePCI::add_by_addr(VectorAttribute *device, const string& short_addr
             return false;
         }
 
-        pci->vmid = vmid;
+        pci->vmid = sr.vmid;
 
-        pci->attrs->replace("VMID", vmid);
+        pci->attrs->replace("VMID", sr.vmid);
 
-        pci_attribute(device, pci, true);
+        pci_attribute(device, pci, true, sr.vgpu_profile);
+
+        if (set_pci_address(device, palloc, sr.is_q35, sr.nodes.size() > 0) == -1)
+        {
+            pci->attrs->replace("VMID", "-1");
+
+            return false;
+        }
 
         return true;
     }
@@ -268,7 +296,9 @@ bool HostSharePCI::add_by_addr(VectorAttribute *device, const string& short_addr
 
 /* -------------------------------------------------------------------------- */
 
-bool HostSharePCI::add_by_name(VectorAttribute *device, int vmid)
+bool HostSharePCI::add_by_name(VectorAttribute *device,
+                               std::map<unsigned int, std::set<unsigned int>>& palloc,
+                               HostShareCapacity &sr)
 {
     unsigned int vendor_id, device_id, class_id;
 
@@ -290,11 +320,18 @@ bool HostSharePCI::add_by_name(VectorAttribute *device, int vmid)
             (device_rc == 0 || pci->device_id == device_id) &&
             pci->vmid  == -1 )
         {
-            pci->vmid = vmid;
+            pci->vmid = sr.vmid;
 
-            pci->attrs->replace("VMID", vmid);
+            pci->attrs->replace("VMID", sr.vmid);
 
-            pci_attribute(device, pci, true);
+            pci_attribute(device, pci, true, sr.vgpu_profile);
+
+            if (set_pci_address(device, palloc, sr.is_q35, sr.nodes.size() > 0) == -1)
+            {
+                pci->attrs->replace("VMID", "-1");
+
+                return false;
+            }
 
             return true;
         }
@@ -305,10 +342,14 @@ bool HostSharePCI::add_by_name(VectorAttribute *device, int vmid)
 
 /* -------------------------------------------------------------------------- */
 
-bool HostSharePCI::add(vector<VectorAttribute *> &devs, int vmid)
+bool HostSharePCI::add(HostShareCapacity &sr)
 {
     std::set<VectorAttribute *> added;
     unsigned int vendor_id, device_id, class_id;
+
+    vector<VectorAttribute *> &devs = sr.pci;
+
+    std::map<unsigned int, std::set<unsigned int>> palloc;
 
     for (auto& device : devs)
     {
@@ -322,7 +363,7 @@ bool HostSharePCI::add(vector<VectorAttribute *> &devs, int vmid)
             continue;
         }
 
-        if (!add_by_addr(device, short_addr, vmid))
+        if (!add_by_addr(device, short_addr, palloc, sr))
         {
             return false;
         }
@@ -337,7 +378,7 @@ bool HostSharePCI::add(vector<VectorAttribute *> &devs, int vmid)
             continue;
         }
 
-        if (!add_by_name(device, vmid))
+        if (!add_by_name(device, palloc, sr))
         {
             return false;
         }
@@ -349,8 +390,12 @@ bool HostSharePCI::add(vector<VectorAttribute *> &devs, int vmid)
 /* ------------------------------------------------------------------------*/
 /* ------------------------------------------------------------------------*/
 
-void HostSharePCI::del(const vector<VectorAttribute *> &devs, int vmid)
+void HostSharePCI::del(HostShareCapacity &sr)
 {
+    const vector<VectorAttribute *> &devs = sr.pci;
+
+    int vmid = sr.vmid;
+
     for (auto device : devs)
     {
         auto pci_it = pci_devices.find(device->vector_value("PREV_ADDRESS"));
@@ -401,22 +446,97 @@ void HostSharePCI::revert(vector<VectorAttribute *> &devs)
             continue;
         }
 
-        pci_attribute(device, pci, false);
+        pci_attribute(device, pci, false, "");
     }
 }
 
 /* ------------------------------------------------------------------------*/
 /* ------------------------------------------------------------------------*/
 
-void HostSharePCI::set_monitorization(Template& ht)
+static bool is_filter_match(const vector<std::array<string, 3>>& filters, VectorAttribute * pci)
 {
-    string address;
+    if (filters.empty())
+    {
+        return true;
+    }
 
-    std::set<string> missing;
+    for (const auto& filter : filters)
+    {
+        if (filter[0] != "*" && filter[0] != pci->vector_value("VENDOR"))
+        {
+            continue;
+        }
 
+        if (filter[1] != "*" && filter[1] != pci->vector_value("DEVICE"))
+        {
+            continue;
+        }
+
+        if (filter[2] != "*" && filter[2] != pci->vector_value("CLASS"))
+        {
+            continue;
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+static bool is_address_match(const vector<string>& saddr, VectorAttribute *pci)
+{
+    if (saddr.empty())
+    {
+        return true;
+    }
+
+    string address = pci->vector_value("SHORT_ADDRESS");
+
+    return std::find(saddr.begin(), saddr.end(), address) != saddr.end();
+}
+
+
+void HostSharePCI::set_monitorization(Template& ht, const HostShareConf& hconf)
+{
     vector<VectorAttribute*> pci_att;
 
     ht.remove("PCI", pci_att);
+
+    vector<std::array<string,3 >> filters;
+    vector<string> short_address;
+
+    if (!hconf.pci_filter.empty())
+    {
+        istringstream iss(hconf.pci_filter);
+
+        std::string filter_str;
+
+        while (getline(iss, filter_str, ','))
+        {
+            filters.emplace_back(std::array<std::string, 3>{"*", "*", "*"});
+
+            auto& filter = filters.back();
+
+            std::istringstream filter_stream(filter_str);
+
+            std::string token;
+
+            for (int i = 0; i < 3 && getline(filter_stream, token, ':'); ++i)
+            {
+                if (!token.empty())
+                {
+                    filter[i] = one_util::trim(token);
+                }
+            }
+        }
+    }
+
+    if (!hconf.pci_short_address.empty())
+    {
+        one_util::split(hconf.pci_short_address,',', short_address);
+    }
+
+    std::set<string> missing;
 
     for (auto pci_it = pci_devices.begin(); pci_it != pci_devices.end(); pci_it++)
     {
@@ -425,9 +545,11 @@ void HostSharePCI::set_monitorization(Template& ht)
 
     for (auto pci : pci_att)
     {
-        address = pci->vector_value("ADDRESS");
+        const auto address = pci->vector_value("ADDRESS");
 
-        if (address.empty())
+        if (address.empty() ||
+                !is_filter_match(filters, pci) ||
+                !is_address_match(short_address, pci))
         {
             delete pci;
             continue;
@@ -512,78 +634,141 @@ int HostSharePCI::get_pci_value(const char * name,
 
 /* ------------------------------------------------------------------------*/
 /* ------------------------------------------------------------------------*/
-
 int HostSharePCI::set_pci_address(VectorAttribute * pci_device,
-                                  const string& dbus, bool bus_index, bool clean)
+        std::map<unsigned int, std::set<unsigned int>>& palloc,
+        bool bus_index, bool numa)
 {
-    string        bus;
     ostringstream oss;
 
-    unsigned int ibus, slot;
+    unsigned int slot;
 
-    // ------------------- Remove well-known attributes -----------------------
-    static vector<string> rm_attr = {"DOMAIN", "BUS", "SLOT", "FUNCTION",
-                                     "ADDRESS", "PREV_ADDRESS", "NUMA_NODE", "UUID"
-                                    };
-
-    if (clean)
+    if (pci_device->vector_value("PCI_ID", slot) == -1)
     {
-        for (const auto& attr : rm_attr)
+        return 0; //Attach operation will set PCI_ID after allocation
+    }
+
+    int numa_node = -1;
+
+    if (numa)
+    {
+        if (pci_device->vector_value("NUMA_NODE", numa_node) == -1)
         {
-            pci_device->remove(attr);
+            numa_node = -1;
         }
     }
 
-    // ------------------- DOMAIN & FUNCTION -------------------------
-    pci_device->replace("VM_DOMAIN", "0x0000");
-    pci_device->replace("VM_FUNCTION", "0");
-
-    // --------------------------- BUS -------------------------------
-    bus = pci_device->vector_value("VM_BUS");
-
-    if ( bus.empty() )
+    if (numa_node != -1)
     {
-        bus = dbus;
+        /* ---------------------------------------------------------------------
+         * NUMA node allocation for VM pinning
+         * ---------------------------------------------------------------------
+         *           +-----------+                    Example for NUMA node 0
+         *           |           |                    =======================
+         *           | PCIe Root |
+         *           |           |                    IDX | DESCRIPTION
+         *           +--+--------+                    -----------------
+         *               |                            20  | expander
+         *        +------+                            21  | port 1
+         *        |                                   22  | port 2
+         *   +----+-----+                             23  | port 3
+         *   | expander |  index = 20 + (node * 14)   24  | port 4
+         *   +----+-----+                             25  | upstream switch
+         *        +------> root-port (0) (index+1)    26  | downstream port
+         *        |        ...                        27  | downstream port
+         *        +------> root-port (3) (index+4)    ... | ...
+         *        |                                   33  | downstream port
+         *        |    +-----------+
+         *        | up |           +-----> down port (index + 6) - 0x20 + 3
+         *        +----+  Switch   |
+         *             |           +-----> down port (index + 13)
+         *             +-----------+
+         * ------------------------------------------------------------------ */
+        std::set<unsigned int>& ports = palloc[numa_node];
+
+        unsigned int first_port = 20 + numa_node * 14 + 6;
+        unsigned int index = 0;
+        unsigned int bus_addr = 0x20 + 0x20 * numa_node + 3;
+
+        for (unsigned int p = first_port ; p < first_port + 8; ++p, ++bus_addr)
+        {
+            if (ports.find(p) == ports.end())
+            {
+                index     = p;
+                break;
+            }
+        }
+
+        if ( index == 0 ) //No free downstream port
+        {
+            return -1;
+        }
+
+        ports.insert(index);
+
+        pci_device->replace("VM_BUS_INDEX", index);
+
+        index = 0x20 + (0x20 * numa_node) + (index - first_port) + 6;
+
+        oss << noshowbase << internal << hex << setfill('0') << setw(2) << bus_addr
+            << ":00.0";
+
+        pci_device->replace("VM_ADDRESS", oss.str());
     }
-
-    istringstream iss(bus);
-
-    iss >> hex >> ibus;
-
-    if (iss.fail() || !iss.eof())
+    else
     {
-        return -1;
+        /* ---------------------------------------------------------------------
+         * Flat topology bus allocation
+         * ---------------------------------------------------------------------
+         * - q35 machine PCI devices are attached to pcie-root-ports using a
+         *   different bus based on the PCI_ID
+         * - On non q35 machines each PCI device is attached in a different slot
+         */
+        pci_device->remove("VM_BUS_INDEX");
+
+        // DOMAIN & FUNCTION
+        pci_device->replace("VM_DOMAIN", "0x0000");
+        pci_device->replace("VM_FUNCTION", "0");
+
+        // BUS
+        unsigned int ibus;
+
+        string bus = pci_device->vector_value("VM_BUS");
+
+        istringstream iss(bus);
+
+        iss >> hex >> ibus;
+
+        if (iss.fail() || !iss.eof())
+        {
+            return -1;
+        }
+
+        slot = slot + 1; // Bus slot = (PCI_ID +1)
+
+        if ( bus_index )
+        {
+            ibus = slot;
+            slot = 0;
+        }
+
+        // Set PCI attributes: VM_SLOT, VM_BUS, VM_ADDRESS
+        oss << showbase << internal << hex << setfill('0') << setw(4) << slot;
+
+        pci_device->replace("VM_SLOT", oss.str());
+
+        oss.str("");
+
+        oss << setfill('0') << setw(4) << ibus;
+
+        pci_device->replace("VM_BUS", oss.str());
+
+        oss.str("");
+
+        oss << noshowbase << internal << hex << setfill('0') << setw(2)
+            << ibus << ":" << setfill('0') << setw(2) << slot << ".0";
+
+        pci_device->replace("VM_ADDRESS", oss.str()); //Bus address = BUS:SLOT.0
     }
-
-    // --------------------- SLOT (PCI_ID +1) -----------------------
-    pci_device->vector_value("PCI_ID", slot);
-
-    slot = slot + 1;
-
-    if ( bus_index )
-    {
-        ibus = slot;
-        slot = 0;
-    }
-
-    // Set PCI attributes
-    oss << showbase << internal << setfill('0') << hex << setw(4) << slot;
-
-    pci_device->replace("VM_SLOT", oss.str());
-
-    oss.str("");
-
-    oss << showbase << internal << setfill('0') << hex << setw(4) << ibus;
-
-    pci_device->replace("VM_BUS", oss.str());
-
-    // ------------------- ADDRESS (BUS:SLOT.0) ---------------------
-    oss.str("");
-
-    oss << noshowbase<<internal<<hex<<setfill('0')<<setw(2) << ibus << ":"
-        << noshowbase<<internal<<hex<<setfill('0')<<setw(2) << slot << ".0";
-
-    pci_device->replace("VM_ADDRESS", oss.str());
 
     return 0;
 }

@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -33,6 +33,18 @@ bool VirtualMachineDisk::is_volatile() const
     one_util::toupper(type);
 
     return ( type == "SWAP" || type == "FS");
+}
+
+bool VirtualMachineDisk::persistent_snapshots() const
+{
+    bool ps;
+
+    if (vector_value("PERSISTENT_SNAPSHOTS", ps) == -1)
+    {
+        ps = true;
+    }
+
+    return ps;
 }
 
 Snapshots::AllowOrphansMode VirtualMachineDisk::allow_orphans() const
@@ -389,6 +401,72 @@ void VirtualMachineDisk::delete_snapshot(int snap_id, Template& ds_quotas,
         delta_disk->replace("SIZE", ssize);
 
         vm_quotas.set(delta_disk);
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+void VirtualMachineDisk::delete_younger_snapshots(int snap_id, Template& ds_quotas,
+    Template& vm_quotas, bool& img_owner, bool& vm_owner)
+{
+    vm_owner  = false;
+    img_owner = false;
+
+    if ( snapshots == 0 )
+    {
+        return;
+    }
+
+    auto younger = snapshots->get_younger_snapshots(snap_id);
+
+    long long ssize = 0;
+
+    for (int i : younger)
+    {
+        ssize += snapshots->snapshot_size(i);
+
+        snapshots->delete_snapshot(i);
+    }
+
+    long long snap_size = snapshots->total_size();
+
+    replace("DISK_SNAPSHOT_TOTAL_SIZE", snap_size);
+
+    string tm_target = get_tm_target();
+
+    vm_owner  = tm_target == "SELF";
+    img_owner = is_persistent() || tm_target == "NONE";
+
+    if ( img_owner || vm_owner )
+    {
+        int update_size = 0;
+        ds_quotas.get("SIZE", update_size);
+        update_size += ssize;
+
+        ds_quotas.replace("DATASTORE", vector_value("DATASTORE_ID"));
+        ds_quotas.replace("SIZE", update_size);
+        ds_quotas.replace("IMAGES", 0 );
+    }
+
+    if (tm_target == "SYSTEM")
+    {
+        int update_size = 0;
+        VectorAttribute* delta_disk = vm_quotas.get("DISK");
+
+        if (delta_disk == nullptr)
+        {
+            delta_disk = new VectorAttribute("DISK");
+            vm_quotas.set(delta_disk);
+        }
+        else
+        {
+            delta_disk->vector_value("SIZE", update_size);
+        }
+
+        update_size += ssize;
+
+        delta_disk->replace("TYPE", "FS");
+        delta_disk->replace("SIZE", ssize);
     }
 }
 
@@ -773,7 +851,7 @@ void VirtualMachineDisks::assign_disk_targets(
 /* -------------------------------------------------------------------------- */
 
 int VirtualMachineDisks::get_images(int vm_id, int uid, const std::string& tsys,
-                                    vector<VectorAttribute *> disks, VectorAttribute * vcontext, bool is_q35,
+                                    vector<VectorAttribute *>& disks, VectorAttribute * vcontext, bool is_q35,
                                     std::string& error_str)
 {
     Nebula&    nd    = Nebula::instance();
@@ -1009,7 +1087,7 @@ void VirtualMachineDisks::release_images(int vmid, bool image_error,
             /* ------- Update snapshots on source image if needed ----------- */
             const Snapshots * snaps = (*it)->get_snapshots();
 
-            if (snaps != 0)
+            if (snaps != 0 && (*it)->persistent_snapshots())
             {
                 imagem->set_image_snapshots(iid, *snaps);
             }
@@ -1571,18 +1649,13 @@ long long VirtualMachineDisks::backup_size(Template &ds_quotas, bool do_volatile
 {
     long long size = 0;
 
-    for (const auto disk : *this)
+    vector<int> ids;
+    backup_disk_ids(do_volatile, ids);
+
+    for (int id : ids)
     {
+        auto disk = get_disk(id);
         long long disk_size = 0;
-
-        string type = disk->vector_value("TYPE");
-
-        one_util::toupper(type);
-
-        if ((type == "SWAP") || ((type == "FS") && !do_volatile))
-        {
-            continue;
-        }
 
         disk->vector_value("SIZE", disk_size);
 
@@ -1604,6 +1677,11 @@ bool VirtualMachineDisks::backup_increment(bool do_volatile)
 
         one_util::toupper(type);
 
+        if (type == "RBD")
+        {
+            continue;
+        }
+
         if ((type == "SWAP") || ((type == "FS") && !do_volatile))
         {
             continue;
@@ -1624,7 +1702,7 @@ bool VirtualMachineDisks::backup_increment(bool do_volatile)
 
 /* -------------------------------------------------------------------------- */
 
-void VirtualMachineDisks::backup_disk_ids(bool do_volatile, std::vector<int>& ids)
+bool VirtualMachineDisks::backup_keep_last(bool do_volatile)
 {
     for (const auto disk : *this)
     {
@@ -1633,6 +1711,37 @@ void VirtualMachineDisks::backup_disk_ids(bool do_volatile, std::vector<int>& id
         one_util::toupper(type);
 
         if ((type == "SWAP") || ((type == "FS") && !do_volatile))
+        {
+            continue;
+        }
+
+        string tm_mad = disk->vector_value("TM_MAD");
+
+        one_util::toupper(tm_mad);
+
+        if (tm_mad == "CEPH")
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/* -------------------------------------------------------------------------- */
+
+void VirtualMachineDisks::backup_disk_ids(bool do_volatile, std::vector<int>& ids)
+{
+    for (const auto disk : *this)
+    {
+        string type = disk->vector_value("TYPE");
+
+        one_util::toupper(type);
+
+        if ((type == "SWAP") ||
+            (type == "CDROM") ||
+            (type == "RBD_CDROM") ||
+            ((type == "FS") && !do_volatile))
         {
             continue;
         }

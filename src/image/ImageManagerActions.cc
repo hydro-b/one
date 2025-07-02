@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -255,6 +255,8 @@ void ImageManager::release_image(int vm_id, int iid, bool failed)
         {
             int num_vms = img->dec_running(vm_id);
 
+            img->update_modification_time();
+
             if (failed)
             {
                 img->set_state(Image::ERROR);
@@ -271,6 +273,8 @@ void ImageManager::release_image(int vm_id, int iid, bool failed)
         case Image::LOCKED_USED_PERS:
         {
             int num_vms = img->dec_running(vm_id);
+
+            img->update_modification_time();
 
             if (failed)
             {

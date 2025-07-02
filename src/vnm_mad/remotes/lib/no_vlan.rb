@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -17,17 +17,18 @@
 module VNMMAD
 
     # NoVLANDriver class
-    class NoVLANDriver< VNMMAD::VLANDriver
+    class NoVLANDriver < VNMMAD::VNMDriver
 
         # Attributes that can be updated on update_nic action
         SUPPORTED_UPDATE = [
-            :phydev
+            :phydev,
+            :vlan_tagged_id
         ]
 
         def initialize(vm, xpath_filter, deploy_id = nil)
-            @locking = true
-
             super(vm, xpath_filter, deploy_id)
+
+            @locking = true
         end
 
         # Activate the driver and creates bridges and tags devices as needed.
@@ -42,12 +43,15 @@ module VNMMAD
                 # Create the bridge.
                 create_bridge(@nic)
 
-                # Return if vlan device is already in the bridge.
+                # Setup transparent proxies.
+                TProxy.setup_tproxy(@nic, :up)
+
+                # Skip if vlan device is already in the bridge.
                 next if !@nic[:phydev] || @nic[:phydev].empty? ||
                         @bridges[@nic[:bridge]].include?(@nic[:phydev])
 
                 # Add phydev device to the bridge.
-                OpenNebula.exec_and_log("#{command(:ip)} link set " \
+                LocalCommand.run_sh("#{command(:ip)} link set " \
                     "#{@nic[:phydev]} master #{@nic[:bridge]}")
 
                 @bridges[@nic[:bridge]] << @nic[:phydev]
@@ -77,28 +81,22 @@ module VNMMAD
 
                     next if @bridges[@nic[:bridge]].nil?
 
-                    # Return if the bridge doesn't exist because it was already
+                    # Skip if the bridge doesn't exist because it was already
                     # deleted (handles last vm with multiple nics on the same
                     # vlan)
                     next unless @bridges.include? @nic[:bridge]
 
-                    # Return if we want to keep the empty bridge
-                    next if @nic[:conf][:keep_empty_bridge]
+                    guests = @bridges[@nic[:bridge]] \
+                           - [@nic[:phydev], "#{@nic[:bridge]}b"]
 
-                    # Return if the phydev device is not the only left device in
-                    # the bridge.A
-                    if @nic[:phydev].nil?
-                        keep = !@bridges[@nic[:bridge]].empty?
-                    else
+                    # Setup transparent proxies.
+                    TProxy.setup_tproxy(@nic, :down) if guests.count < 1
 
-                        keep = @bridges[@nic[:bridge]].length > 1 ||
-                            !@bridges[@nic[:bridge]].include?(@nic[:phydev])
-                    end
-
-                    next if keep
+                    # Skip the bridge removal (on demand or when still in use).
+                    next if @nic[:conf][:keep_empty_bridge] || guests.count > 0
 
                     # Delete the bridge.
-                    OpenNebula.exec_and_log("#{command(:ip)} link delete #{@nic[:bridge]}")
+                    LocalCommand.run_sh("#{command(:ip)} link delete #{@nic[:bridge]}")
 
                     @bridges.delete(@nic[:bridge])
                 end
@@ -115,7 +113,7 @@ module VNMMAD
             begin
                 changes = @vm.changes.select {|k, _| SUPPORTED_UPDATE.include?(k) }
 
-                return 0 if changes[:phydev].nil? || changes[:phydev].empty?
+                return 0 if changes.empty?
 
                 @bridges = list_bridges
 
@@ -123,21 +121,82 @@ module VNMMAD
                     @nic = nic
 
                     next unless Integer(@nic[:network_id]) == vnet_id
-                    next if @nic[:phydev].empty? || @bridges[@nic[:bridge]].include?(@nic[:phydev])
 
-                    # Del old phydev device from the bridge.
-                    OpenNebula.exec_and_log("#{command(:ip)} link set " \
-                    "nomaster #{changes[:phydev]}")
+                    if !changes[:phydev].nil?
+                        LocalCommand.run_sh("#{command(:ip)} link set " \
+                            "nomaster #{changes[:phydev]}") unless changes[:phydev].empty?
 
-                    # Add new phydev device to the bridge.
-                    OpenNebula.exec_and_log("#{command(:ip)} link set " \
-                    "#{@nic[:phydev]} master #{@nic[:bridge]}")
+                        LocalCommand.run_sh("#{command(:ip)} link set " \
+                            "#{@nic[:phydev]} master #{@nic[:bridge]}") unless @nic[:phydev].empty?
+                    end
+
+                    if !changes[:vlan_tagged_id].nil?
+                        clean_vlan_filters(@nic)
+
+                        @bridges[@nic[:bridge]].each do |dev|
+                            set_vlan_filter(dev, nil, @nic.vlan_trunk)
+                        end if @nic.vlan_trunk?
+                    end
 
                     return 0
                 end
             ensure
                 unlock
             end
+
+            0
+        end
+
+        # ----------------------------------------------------------------------
+        # VLAN filter with trunk VLANs
+        # ----------------------------------------------------------------------
+        # In this scenario the VM ports are configured to transport the VLAN
+        # trunks. Untagged traffic is sent directly through the PHY_DEV interface
+        #
+        #             +--------------------+
+        #             | Port Configuration |
+        #             |--------------------|
+        #   --(eth0)--+ 200            200 +------ VM (one-20-1)
+        #             | 300            300 |
+        #             +--------------------+
+        #
+        # NOTE: **Not implemented** for this driver. In this configuration,
+        # untagged traffic can be easily tagged with this bridge vlan configuration:
+        #
+        #     eth0         100 (VLAN_ID = 100)
+        #                  200
+        #                  300
+        #     one-20-1     100 PVID Egress Untagged
+        #                  200
+        #                  300
+        # ----------------------------------------------------------------------
+        def vlan_filter
+            lock
+
+            bridge_done = []
+
+            process do |nic|
+                @nic = nic
+
+                next if @nic[:phydev].nil? || @nic[:bridge].nil? || !@nic.vlan_trunk?
+
+                vlan_set = @nic.vlan_trunk
+
+                # Configure ports to allow trunk vlans
+                set_vlan_filter(@nic[:tap], nil, vlan_set)
+
+                next if bridge_done.include? @nic[:bridge]
+
+                # Configure the Bridge (only once)
+                LocalCommand.run_sh("#{command(:ip)} link set dev #{@nic[:bridge]}"\
+                    ' type bridge vlan_filtering 1', :ok_rcs => 2)
+
+                set_vlan_filter(@nic[:phydev], nil, vlan_set)
+
+                bridge_done << @nic[:bridge]
+            end
+
+            unlock
 
             0
         end

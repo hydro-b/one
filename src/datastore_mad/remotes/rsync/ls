@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -34,23 +34,7 @@ end
 SERVERADMIN_AUTH = VAR_LOCATION + '/.one/onegate_auth'
 
 # %%RUBYGEMS_SETUP_BEGIN%%
-if File.directory?(GEMS_LOCATION)
-    real_gems_path = File.realpath(GEMS_LOCATION)
-    if !defined?(Gem) || Gem.path != [real_gems_path]
-        $LOAD_PATH.reject! {|l| l =~ /vendor_ruby/ }
-
-        # Suppress warnings from Rubygems
-        # https://github.com/OpenNebula/one/issues/5379
-        begin
-            verb = $VERBOSE
-            $VERBOSE = nil
-            require 'rubygems'
-            Gem.use_paths(real_gems_path)
-        ensure
-            $VERBOSE = verb
-        end
-    end
-end
+require 'load_opennebula_paths'
 # %%RUBYGEMS_SETUP_END%%
 
 $LOAD_PATH << RUBY_LIB_LOCATION
@@ -98,9 +82,10 @@ begin
     bpath = xml.elements['DATASTORE/BASE_PATH'].text
     ruser = xml.elements['DATASTORE/TEMPLATE/RSYNC_USER']&.text || 'oneadmin'
     rhost = xml.elements['DATASTORE/TEMPLATE/RSYNC_HOST'].text
+    format = xml.elements['IMAGE/FORMAT'].text
 
     snap = image.selected || image.last
-    burl = "rsync://#{ds_id}/#{image.bj_id}/#{chain}"
+    burl = "rsync#{format == 'rbd' ? '+rbd' : ''}://#{ds_id}/#{image.bj_id}/#{chain}"
 
     # --------------------------------------------------------------------------
     # Get a list of disk paths stored in the backup

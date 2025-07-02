@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -27,23 +27,7 @@ else
 end
 
 # %%RUBYGEMS_SETUP_BEGIN%%
-if File.directory?(GEMS_LOCATION)
-    real_gems_path = File.realpath(GEMS_LOCATION)
-    if !defined?(Gem) || Gem.path != [real_gems_path]
-        $LOAD_PATH.reject! {|l| l =~ /vendor_ruby/ }
-
-        # Suppress warnings from Rubygems
-        # https://github.com/OpenNebula/one/issues/5379
-        begin
-            verb = $VERBOSE
-            $VERBOSE = nil
-            require 'rubygems'
-            Gem.use_paths(real_gems_path)
-        ensure
-            $VERBOSE = verb
-        end
-    end
-end
+require 'load_opennebula_paths'
 # %%RUBYGEMS_SETUP_END%%
 
 $LOAD_PATH << RUBY_LIB_LOCATION
@@ -231,6 +215,40 @@ CommandParser::CmdParser.new(ARGV) do
     command :rename, rename_desc, :clusterid, :name do
         helper.perform_action(args[0], options, 'renamed') do |o|
             o.rename(args[1])
+        end
+    end
+
+    optimize_desc = <<-EOT.unindent
+        Create optimization plan for Cluster
+    EOT
+
+    # TODO: Consider optional parameters
+    #  - autostart: Automatically start applying the new optimization plan
+    #  - force: Delete old plan if exists
+    command :optimize, optimize_desc, :clusterid do
+        helper.perform_action(args[0], options, 'creating optimization plan') do |o|
+            o.optimize
+        end
+    end
+
+    planexecute_desc = <<-EOT.unindent
+        Start applying the optimization plan
+    EOT
+
+    command :planexecute, planexecute_desc, :clusterid do
+        helper.perform_action(args[0], options, 'cluster optimization started') do |o|
+            o.plan_execute
+        end
+    end
+
+    plandelete_desc = <<-EOT.unindent
+        Delete the optimization plan
+    EOT
+
+    # TODO: We should allow to delete a placement plan with id -1
+    command :plandelete, plandelete_desc, :clusterid do
+        helper.perform_action(args[0], options, 'plan deleted') do |o|
+            o.plan_delete
         end
     end
 end

@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -69,23 +69,22 @@ protected:
             RequestAttributes&  att,
             PoolObjectAuth&     vm_perms);
 
-    int get_host_information(
+    ErrorCode get_host_information(
             int                hid,
             std::string&       name,
             std::string&       vmm,
             int&               cluster_id,
-            bool&              is_public_cloud,
             PoolObjectAuth&    host_perms,
             RequestAttributes& att);
 
-    int get_ds_information(
+    ErrorCode get_ds_information(
             int ds_id,
             std::set<int>& ds_cluster_ids,
             std::string& tm_mad,
             RequestAttributes& att,
             bool& ds_migr);
 
-    int get_default_ds_information(
+    ErrorCode get_default_ds_information(
             int cluster_id,
             int& ds_id,
             std::string& tm_mad,
@@ -148,6 +147,13 @@ public:
 
     ~VirtualMachineDeploy() = default;
 
+    ErrorCode request_execute(RequestAttributes& att,
+                                       int vid,
+                                       int hid,
+                                       bool enforce,
+                                       int ds_id,
+                                       const std::string& str_tmpl);
+
 protected:
     void request_execute(xmlrpc_c::paramList const& _paramList,
                          RequestAttributes& att) override;
@@ -168,6 +174,14 @@ public:
     }
 
     ~VirtualMachineMigrate() = default;
+
+    ErrorCode request_execute(RequestAttributes& att,
+                                       int vid,
+                                       int hid,
+                                       bool live,
+                                       bool enforce,
+                                       int ds_id,
+                                       int poweroff);
 
 protected:
     void request_execute(xmlrpc_c::paramList const& _paramList,

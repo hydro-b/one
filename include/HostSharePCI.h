@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -43,6 +43,10 @@
  *  The monitor probe may report additional information such as VENDOR_NAME,
  *  DEVICE_NAME, CLASS_NAME...
  */
+struct HostShareConf;
+
+struct HostShareCapacity;
+
 class HostSharePCI : public Template
 {
 public:
@@ -78,17 +82,18 @@ public:
      *    @param devs list of requested PCI devices, will include address of
      *    assigned devices.
      *    @param vmid of the VM
+     *    @param hp host/cluster vGPU profile
      *
      *    @return true if the devices where added
      *
      *    NOTE THIS FUNCTION DOES NOT PERFORM ANY ROLLBACK
      */
-    bool add(std::vector<VectorAttribute *> &devs, int vmid);
+    bool add(HostShareCapacity &sr);
 
     /**
      *  Remove the VM assignment from the PCI device list
      */
-    void del(const std::vector<VectorAttribute *> &devs, int vmid);
+    void del(HostShareCapacity &sr);
 
     /**
      *  Revert the VM assignment from the PCI device list. It copies
@@ -100,7 +105,7 @@ public:
      *  Updates the PCI list with monitor data, it will create or
      *  remove PCIDevices as needed.
      */
-    void set_monitorization(Template& ht);
+    void set_monitorization(Template& ht, const HostShareConf& hconf);
 
     void clear() override;
 
@@ -136,20 +141,20 @@ public:
      *    - VM_SLOT: 0
      *    - VM_BUS: PCI_ID + 1
      *
-     *  Cleans internal attributes:
-     *    - NUMA_NODE
-     *    - UUID
-     *    - BUS, SLOT, FUNCITION
-     *    - ADDRESS, PREV_ADDRESS
+     *  When the VM uses a VM topology it assigns a VM_BUS_INDEX to match the
+     *  associated pcie-root-port.
+     *
      *  @param pci_device to set the address in
-     *  @param default_bus if not set in PCI attribute (PCI_PASSTHROUGH_BUS
-     *   in oned.conf)
+     *  @param palloc map of allocated pci ports per numa node
      *  @param bus_index when true devices uses slot = 0 and bus = pci_id + 1
+     *  @param numa when true generate NUMA-aware VM addresses for the PCI device
+     *
      *  @return -1 if wrong bus 0 on success
      */
-    static int set_pci_address(VectorAttribute * pci_device, const std::string& dbus,
-                               bool bus_index, bool clean);
-
+    static int set_pci_address(VectorAttribute * pci_device,
+                               std::map<unsigned int, std::set<unsigned int>>& palloc,
+                               bool bus_index,
+                               bool numa);
 private:
     /**
      *  Internal structure to represent PCI devices for fast look up and
@@ -206,27 +211,32 @@ private:
     /**
      *  Allocates the given VM device using the VENDOR/DEVICE/CLASS attributes
      *  @param device VM attribute that represents the decive request
-     *  @param vmid of the VM
      */
-    bool add_by_name(VectorAttribute *device, int vmid);
+    bool add_by_name(VectorAttribute *device,
+                     std::map<unsigned int, std::set<unsigned int>>& palloc,
+                     HostShareCapacity &sr);
 
     /**
      *  Allocates the given VM device using the SHORT_ADDRESS attribute
      *  @param device VM attribute that represents the decive request
-     *  @param vmid of the VM
-     *
-     *  @return pci_id of the allocated device or -1 if not allocated
      */
-    bool add_by_addr(VectorAttribute *device, const std::string& addr, int vmid);
+    bool add_by_addr(VectorAttribute *device,
+                     const std::string& addr,
+                     std::map<unsigned int, std::set<unsigned int>>& palloc,
+                     HostShareCapacity &sr);
 
     /**
      *  Adds PCI attributes of the selected PCI to the VM PCI device
+     *
+     *  Sets the VGPU profile for NVIDIA cards NOTE: A migration may overwrite
+     *  this value if the new host uses a different profile.
      *
      *  @param device VM attribute
      *  @param pci Host device
      *  @param sp if true set the "PREVIOUS_ADDRESS" attribute
      */
-    void pci_attribute(VectorAttribute *device, PCIDevice *pci, bool sp);
+    void pci_attribute(VectorAttribute *device, PCIDevice *pci, bool sp,
+            const std::string& vprofile);
 };
 
 #endif /*HOST_SHARE_PCI_H_*/

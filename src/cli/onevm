@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -27,23 +27,7 @@ else
 end
 
 # %%RUBYGEMS_SETUP_BEGIN%%
-if File.directory?(GEMS_LOCATION)
-    real_gems_path = File.realpath(GEMS_LOCATION)
-    if !defined?(Gem) || Gem.path != [real_gems_path]
-        $LOAD_PATH.reject! {|l| l =~ /vendor_ruby/ }
-
-        # Suppress warnings from Rubygems
-        # https://github.com/OpenNebula/one/issues/5379
-        begin
-            verb = $VERBOSE
-            $VERBOSE = nil
-            require 'rubygems'
-            Gem.use_paths(real_gems_path)
-        ensure
-            $VERBOSE = verb
-        end
-    end
-end
+require 'load_opennebula_paths'
 # %%RUBYGEMS_SETUP_END%%
 
 $LOAD_PATH << RUBY_LIB_LOCATION
@@ -320,7 +304,7 @@ CommandParser::CmdParser.new(ARGV) do
         helper.filterflag_to_i(arg)
     end
 
-    set :format, :diskid, 'Integer' do |arg|
+    set :format, :diskid, 'Disk id' do |arg|
         format_int(arg)
     end
 
@@ -328,12 +312,28 @@ CommandParser::CmdParser.new(ARGV) do
         OpenNebulaHelper.size_in_mb(arg)
     end
 
-    format :snapshot_id, 'Snapshot identifier' do |arg|
+    set :format, :snapshot_id, 'Snapshot name or id' do |arg|
         helper.retrieve_snapshot_id(@current_vm, arg)
     end
 
-    format :disk_snapshot_id, 'Disk_snapshot identifier' do |arg|
+    set :format, :disk_snapshot_id, 'Disk_snapshot name or id' do |arg|
         helper.retrieve_disk_snapshot_id(@current_vm, arg)
+    end
+
+    set :format, :nicid, 'NIC name or id' do |arg|
+        helper.retrieve_nic_id(@current_vm, arg)
+    end
+
+    set :format, :pciid, 'PCI id' do |arg|
+        format_int(arg)
+    end
+
+    set :format, :sched_id, 'Scheduled Action id' do |arg|
+        format_int(arg)
+    end
+
+    set :format, :sgid, 'Security Group id' do |arg|
+        format_int(arg)
     end
 
     ########################################################################
@@ -647,7 +647,8 @@ CommandParser::CmdParser.new(ARGV) do
 
     migrate_desc = <<-EOT.unindent
         Migrates the given running VM to another Host. If used with --live
-        parameter the miration is done without downtime.
+        parameter the migration is done without downtime. Datastore migration is
+        not supported for --live flag.
 
         States: RUNNING
     EOT
@@ -1123,6 +1124,24 @@ CommandParser::CmdParser.new(ARGV) do
         end
     end
 
+    snapshot_list_desc = <<-EOT.unindent
+        Lists the snapshots of a VM
+    EOT
+
+    command :"snapshot-list", snapshot_list_desc, :vmid do
+        vm = helper.retrieve_resource(args[0])
+        vm.info
+
+        if vm.has_elements?('/VM/TEMPLATE/SNAPSHOT')
+            CLIHelper.print_header('SNAPSHOTS'.ljust(80), false)
+
+            helper.format_template_snapshots(vm)
+        else
+            puts 'No snapshots available'
+        end
+        0
+    end
+
     disk_snapshot_create_desc = <<-EOT.unindent
         Takes a new snapshot of the given disk. This operation needs support
         from the Datastore drivers: QCOW2 or Ceph.
@@ -1282,6 +1301,35 @@ CommandParser::CmdParser.new(ARGV) do
         helper.show_resource(args[0], options)
     end
 
+    disk_snapshot_list_desc = <<-EOT.unindent
+        Lists the snapshots of a disk
+    EOT
+
+    command :"disk-snapshot-list", disk_snapshot_list_desc, :vmid, :diskid do
+        vm = helper.retrieve_resource(args[0])
+        vm.info
+
+        if vm.has_elements?('/VM/SNAPSHOTS')
+            filtered = []
+            vm_hash = vm.to_hash
+            vm_snapshots = [vm_hash['VM']['SNAPSHOTS']].flatten
+
+            vm_snapshots.each do |snap|
+                if snap['DISK_ID'] == args[1]
+                    filtered << snap
+                end
+            end
+
+            vm_hash['VM']['SNAPSHOTS'] = filtered
+
+            CLIHelper.print_header('VM DISK SNAPSHOTS'.ljust(80), false)
+            helper.format_snapshots(vm_hash)
+        else
+            puts 'No snapshots available in this disk'
+        end
+        0
+    end
+
     top_desc = <<-EOT.unindent
         Lists Images continuously
     EOT
@@ -1386,9 +1434,9 @@ CommandParser::CmdParser.new(ARGV) do
         GRAPHICS  = ["TYPE", "LISTEN", "PASSWD", "KEYMAP", "COMMAND"]
         VIDEO     = ["TYPE", "IOMMU", "ATS", "VRAM", "RESOLUTION"]
         RAW       = ["DATA", "DATA_VMX", "TYPE", "VALIDATE"]
-        CPU_MODEL = ["MODEL"]
+        CPU_MODEL = ["MODEL", "FEATURES"]
         BACKUP_CONFIG = ["FS_FREEZE", "KEEP_LAST", "BACKUP_VOLATILE", "MODE", "INCREMENT_MODE"]
-        CONTEXT (any value, except ETH*, **variable substitution will be made**)
+        CONTEXT (any value, ETH* if CONTEXT_ALLOW_ETH_UPDATES set in oned.conf, **variable substitution will be made**)
     EOT
 
     command :updateconf, updateconf_desc, :vmid, [:file, nil],
@@ -1486,7 +1534,6 @@ CommandParser::CmdParser.new(ARGV) do
         end
 
         acc_t = 0
-        acc_w = 0
 
         helper.perform_action(args[0], {}, 'Charter added') do |vm|
             vm.info
@@ -1499,12 +1546,11 @@ CommandParser::CmdParser.new(ARGV) do
                 rc = helper.schedule_actions([args[0]].flatten,
                                              { :schedule => sched },
                                              action.to_s,
-                                             time[:warning][:time] + acc_w)
+                                             "+#{time[:warning][:time].to_i + acc_t}")
 
                 exit(-1) if rc < 0
 
                 acc_t += time[:time].to_i
-                acc_w += time[:warning][:time].to_i
             end
         end
 

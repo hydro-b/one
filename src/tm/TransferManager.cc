@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -23,6 +23,7 @@
 #include "VirtualMachinePool.h"
 #include "LifeCycleManager.h"
 #include "ImagePool.h"
+#include "PlanManager.h"
 
 using namespace std;
 
@@ -306,15 +307,6 @@ static int test_and_trigger(VirtualMachine * vm,
         return -1;
     }
 
-    if (vm->get_host_is_cloud())
-    {
-        auto lcm = Nebula::instance().get_lcm();
-
-        (lcm->*success)(vm->get_oid());
-
-        return -1;
-    }
-
     return 0;
 }
 
@@ -487,6 +479,12 @@ error_attributes:
 error_common:
         nd.get_lcm()->trigger_prolog_failure(vid);
         vm->log("TrM", Log::ERROR, os);
+
+        if (vm->hasHistory() && vm->plan_id() >= -1)
+        {
+            auto planm = Nebula::instance().get_planm();
+            planm->action_failure(vm->plan_id(), vm->action_id());
+        }
 
         return;
     });

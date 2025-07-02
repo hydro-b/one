@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -13,16 +13,16 @@
  * See the License for the specific language governing permissions and       *
  * limitations under the License.                                            *
  * ------------------------------------------------------------------------- */
-import { hydrate, render } from 'react-dom'
-
-import { createStore } from 'client/store'
+/* eslint-disable jsdoc/require-jsdoc */
 import App from 'client/apps/sunstone'
+import { createStore } from 'client/store'
+import { render } from 'react-dom'
+import 'uplot/dist/uPlot.min.css'
 
 export const { store } = createStore({ initState: window.__PRELOADED_STATE__ })
 
 delete window.__PRELOADED_STATE__
 
-const rootHTML = document.getElementById('root')?.innerHTML
-const renderMethod = rootHTML !== '' ? hydrate : render
-
-renderMethod(<App store={store} />, document.getElementById('root'))
+export default function initApp() {
+  render(<App store={store} />, document.getElementById('root'))
+}

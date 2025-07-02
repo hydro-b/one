@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -15,13 +15,17 @@
  * ------------------------------------------------------------------------- */
 
 const { Actions, Commands } = require('server/routes/api/host/routes')
-const { show } = require('server/routes/api/host/functions')
+const { show, flush } = require('server/routes/api/host/functions')
 
-const { HOSTPOOL_ADMINSHOW } = Actions
+const { HOSTPOOL_ADMINSHOW, HOST_FLUSH } = Actions
 
 module.exports = [
   {
     ...Commands[HOSTPOOL_ADMINSHOW],
     action: show,
+  },
+  {
+    ...Commands[HOST_FLUSH],
+    action: flush,
   },
 ]

@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -403,6 +403,8 @@ func MakePair(key string, v interface{}) (*Pair, error) {
 		val = fmt.Sprintf("%f", v)
 	case int, uint:
 		val = fmt.Sprintf("%d", v)
+	case bool:
+		val = strconv.FormatBool(v)
 	case string:
 		val = v
 	}

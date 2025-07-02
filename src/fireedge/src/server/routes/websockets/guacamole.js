@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -20,6 +20,7 @@ const { messageTerminal } = require('server/utils/general')
 const { genFireedgeKey, genPathResources } = require('server/utils/server')
 const { writeInLogger } = require('server/utils/logger')
 const { endpointGuacamole } = require('server/utils/constants/defaults')
+const { create, deleteTunnel } = require('server/utils/sshTunnel')
 
 // set paths
 genPathResources()
@@ -29,7 +30,7 @@ genFireedgeKey()
 
 const formatError = 'Error: %s'
 /**
- * Object http error.
+ * Object console error log.
  *
  * @param {object} error - error message
  * @returns {object} error for terminalMessage function
@@ -47,9 +48,17 @@ const clientOptions = {
     key: global?.paths?.FIREEDGE_KEY || '',
   },
   allowedUnencryptedConnectionSettings: {
-    rdp: ['width', 'height', 'dpi'],
-    vnc: ['width', 'height', 'dpi'],
-    ssh: ['color-scheme', 'font-name', 'font-size', 'width', 'height', 'dpi'],
+    rdp: ['width', 'height', 'dpi', 'rangeports'],
+    vnc: ['width', 'height', 'dpi', 'rangeports'],
+    ssh: [
+      'color-scheme',
+      'font-name',
+      'font-size',
+      'width',
+      'height',
+      'dpi',
+      'rangeports',
+    ],
     telnet: [
       'color-scheme',
       'font-name',
@@ -57,6 +66,7 @@ const clientOptions = {
       'width',
       'height',
       'dpi',
+      'rangeports',
     ],
   },
   log: {
@@ -65,12 +75,74 @@ const clientOptions = {
 }
 
 const clientCallbacks = {
-  processConnectionSettings: (settings, callback) => {
+  processConnectionSettings: async (
+    settings,
+    callback,
+    { connections, id }
+  ) => {
     if (settings?.expiration < Date.now()) {
       return callback(new Error('Token expired'))
     }
 
+    let rangePorts = [5900, 65536]
+    if (settings?.connection?.rangeports) {
+      rangePorts = settings?.connection?.rangeports.split(':').map(Number)
+
+      await create(
+        {
+          vmPort: settings?.connection?.port,
+          hostAddr: settings?.connection?.hostname,
+          settings,
+          rangePorts,
+        },
+        {
+          connect: (pidTunnel) => {
+            if (connections && id) {
+              const dataConnection = connections?.get?.(id)
+              dataConnection
+                ? (dataConnection.pidTunnel = pidTunnel)
+                : connections.set(id, { pidTunnel })
+
+              writeInLogger([pidTunnel, id], {
+                format:
+                  'Tunnel SSH created with PID: %1$s to connection: %2$s ',
+                level: 2,
+              })
+            }
+          },
+          error: (err) => {
+            writeInLogger(err, {
+              format: formatError,
+            })
+          },
+        }
+      )
+    }
+
     return callback(null, settings)
+  },
+
+  processConnectionClose: (err, { connections, id }) => {
+    if (id) {
+      writeInLogger(id, {
+        format: 'Closing unused ssh connection: %s',
+        level: 2,
+      })
+
+      if (connections?.length) {
+        const others = [...connections.values()].some(
+          (value) => value.pidTunnel === id
+        )
+        !others && deleteTunnel(id)
+      } else {
+        deleteTunnel(id)
+      }
+    }
+
+    writeInLogger(err, {
+      format: 'WS connection closed: %s',
+    })
+    messageTerminal(configError(err))
   },
 }
 

@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -117,7 +117,7 @@ int Backups::from_xml(const ObjectXML* xml)
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
-int Backups::parse(Template *tmpl, bool can_increment,
+int Backups::parse(Template *tmpl, bool can_increment, bool can_keep_last_increment,
                    bool append, std::string& error_str)
 {
     vector<Attribute *> cfg_a;
@@ -237,6 +237,12 @@ int Backups::parse(Template *tmpl, bool can_increment,
                 config.replace("INCREMENT_MODE", "CBT");
             }
         }
+    }
+
+    // Bug #7017: Remove after the bug is fixed
+    if (mode() == INCREMENT && !can_keep_last_increment)
+    {
+        config.erase("KEEP_LAST");
     }
 
     for (auto &i : cfg_a)

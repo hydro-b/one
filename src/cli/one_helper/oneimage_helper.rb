@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -22,7 +22,7 @@ class OneImageHelper < OpenNebulaHelper::OneHelper
 
     # This list contains prefixes that should skip adding user home to the path
     # This must have the same content as the case $FROM in downloader.sh
-    PREFIXES = ['http', 'https', 'ssh', 's3', 'rbd', 'vcenter', 'lxd', 'docker', 'dockerfile']
+    PREFIXES = ['http', 'https', 'ssh', 's3', 'rbd', 'lxd']
 
     TEMPLATE_OPTIONS=[
         {
@@ -112,23 +112,6 @@ class OneImageHelper < OpenNebulaHelper::OneHelper
             :format => String
         },
         {
-            :name => 'vcenter_disk_type',
-            :large => '--vcenter_disk_type vcenter_disk_type',
-            :description => "The vCenter Disk Type of the image \n"<<
-                ' ' * 31 <<
-                'for vCenter: THIN, THICK, ZEROEDTHICK ' \
-                '(for others, check the documentation) ',
-            :format => String
-        },
-        {
-            :name => 'vcenter_adapter_type',
-            :large => '--vcenter_adapter_type vcenter_adapter_type',
-            :description => 'Controller that will handle this image in ' \
-                'vCenter (lsiLogic, ide, busLogic). For other '\
-                'values check the documentation',
-            :format => String
-        },
-        {
             :name => 'source',
             :large => '--source source',
             :description =>
@@ -201,6 +184,22 @@ class OneImageHelper < OpenNebulaHelper::OneHelper
         Image::SHORT_IMAGE_TYPES[type_str]
     end
 
+    def retrieve_snapshot_id(image_id, id)
+        return [0, id.to_i] if id =~ /\A\d+\z/
+
+        image = retrieve_resource(image_id)
+        image.info
+
+        ids = image.retrieve_elements(
+            "/IMAGE/SNAPSHOTS/SNAPSHOT[NAME='#{id}']/ID"
+        )
+
+        return [-1, "#{id} not found or duplicated"] \
+                if ids.nil? || ids.size > 1
+
+        [0, ids[0].to_i]
+    end
+
     def format_pool(options)
         config_file = self.class.table_conf
 
@@ -234,6 +233,11 @@ class OneImageHelper < OpenNebulaHelper::OneHelper
             column :REGTIME, 'Registration time of the Image',
                    :size=>15 do |d|
                 OpenNebulaHelper.time_to_str(d['REGTIME'])
+            end
+
+            column :MODTIME, 'Last modification time of the Image',
+                   :size=>15 do |d|
+                OpenNebulaHelper.time_to_str(d['MODTIME'])
             end
 
             column :PERSISTENT, 'Whether the Image is persistent or not',
@@ -308,6 +312,7 @@ class OneImageHelper < OpenNebulaHelper::OneHelper
         size = OpenNebulaHelper.unit_to_str(image['SIZE'].to_i, {}, 'M')
         lock = OpenNebulaHelper.level_lock_to_str(image['LOCK/LOCKED'])
         regtime = OpenNebulaHelper.time_to_str(image['REGTIME'])
+        modtime = OpenNebulaHelper.time_to_str(image['MODTIME'])
         pers = OpenNebulaHelper.boolean_to_str(image['PERSISTENT'])
 
         CLIHelper.print_header(str_h1 % "IMAGE #{image['ID']} INFORMATION")
@@ -319,6 +324,7 @@ class OneImageHelper < OpenNebulaHelper::OneHelper
         puts format(str, 'DATASTORE', image['DATASTORE'])
         puts format(str, 'TYPE', image.type_str)
         puts format(str, 'REGISTER TIME', regtime)
+        puts format(str, 'LAST MODIFIED', modtime)
         puts format(str, 'PERSISTENT', pers)
         puts format(str, 'SOURCE', image['SOURCE'])
         puts format(str, 'PATH', path) if path && !path.empty?

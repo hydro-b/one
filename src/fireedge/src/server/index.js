@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -15,43 +15,37 @@
  * ------------------------------------------------------------------------- */
 
 import {
+  entrypoint404,
+  entrypointApi,
+  entrypointApp,
+} from './routes/entrypoints'
+import {
   defaultAppName,
   defaultApps,
   defaultEvents,
   defaultHost,
   defaultPort,
   defaultWebpackMode,
+  endpointExternalGuacamole,
 } from './utils/constants/defaults'
-import {
-  entrypoint404,
-  entrypointApi,
-  entrypointApp,
-} from './routes/entrypoints'
+import { getLoggerMiddleware, initLogger } from './utils/logger'
 import {
   genFireedgeKey,
   genPathResources,
-  getCert,
-  getKey,
-  validateServerIsSecure,
   setDnsResultOrder,
 } from './utils/server'
-import { getLoggerMiddleware, initLogger } from './utils/logger'
 
 import compression from 'compression'
 import cors from 'cors'
-import { env } from 'process'
 import express from 'express'
-import { getFireedgeConfig } from './utils/yml'
-import guacamole from './routes/websockets/guacamole'
 import helmet from 'helmet'
 import http from 'http'
-import https from 'https'
-import { messageTerminal } from './utils/general'
-import opennebulaWebsockets from './routes/websockets/opennebula'
-import { readFileSync } from 'fs-extra'
 import { resolve } from 'path'
-import vmrc from './routes/websockets/vmrc'
-import webpack from 'webpack'
+import guacamole from './routes/websockets/guacamole'
+import guacamoleProxy from './routes/websockets/guacamoleProxy'
+import opennebulaWebsockets from './routes/websockets/opennebula'
+import { messageTerminal } from './utils/general'
+import { getFireedgeConfig } from './utils/yml'
 
 setDnsResultOrder()
 
@@ -66,53 +60,36 @@ genFireedgeKey()
 // set logger
 initLogger(appConfig.debug_level, appConfig.truncate_max_length)
 
-// destructure imports
-const unsecureServer = http.createServer
-const secureServer = https.createServer
-
 const app = express()
 const basename = defaultAppName ? `/${defaultAppName}` : ''
 
 let frontPath = 'client'
+let remoteModulesPath = 'modules'
+
+if (process.env.NODE_ENV === defaultWebpackMode) {
+  frontPath = `../../dist/${frontPath}`
+  remoteModulesPath = `../../dist/${remoteModulesPath}`
+}
 
 // settings
 const host = appConfig.host || defaultHost
 const port = appConfig.port || defaultPort
 
-if (env?.NODE_ENV === defaultWebpackMode) {
-  try {
-    const webpackConfig = require('../../webpack.config.dev.client')
-    const compiler = webpack(webpackConfig)
-
-    app.use(
-      // eslint-disable-next-line import/no-extraneous-dependencies
-      require('webpack-dev-middleware')(compiler, {
-        publicPath: webpackConfig.output.publicPath,
-      })
-    )
-
-    app.use(
-      // eslint-disable-next-line import/no-extraneous-dependencies
-      require('webpack-hot-middleware')(compiler, {
-        path: '/__webpack_hmr',
-        heartbeat: 10 * 1000,
-      })
-    )
-  } catch (error) {
-    if (error) {
-      messageTerminal({
-        color: 'red',
-        error,
-      })
-    }
-  }
-  frontPath = '../client'
-}
 app.use(helmet.xssFilter())
 app.use(helmet.hidePoweredBy())
 app.use(compression())
 app.use(`${basename}/client`, express.static(resolve(__dirname, frontPath)))
 app.use(`${basename}/client/*`, express.static(resolve(__dirname, frontPath)))
+
+// Remote modules serving
+app.use(
+  `${basename}/modules`,
+  express.static(resolve(__dirname, remoteModulesPath))
+)
+app.use(
+  `${basename}/modules/*`,
+  express.static(resolve(__dirname, remoteModulesPath))
+)
 
 const loggerMiddleware = getLoggerMiddleware()
 if (loggerMiddleware) {
@@ -125,9 +102,9 @@ if (appConfig.cors) {
 }
 // post params parser body
 app.use(express.urlencoded({ extended: false }))
-app.use(express.json())
+app.use(express.json({ limit: '4mb' }))
 
-app.use(`${basename}/api`, entrypointApi) // opennebula Api routes
+app.use(`${basename}/api`, entrypointApi) // OpenNebula Api routes
 const frontApps = Object.keys(defaultApps)
 frontApps.forEach((frontApp) => {
   app.get(`${basename}/${frontApp}`, entrypointApp)
@@ -137,15 +114,7 @@ app.get('/*', (_, res) => res.redirect(`/${defaultAppName}/sunstone`))
 // 404 - public
 app.get('*', entrypoint404)
 
-const appServer = validateServerIsSecure()
-  ? secureServer(
-      {
-        key: readFileSync(getKey(), 'utf8'),
-        cert: readFileSync(getCert(), 'utf8'),
-      },
-      app
-    )
-  : unsecureServer(app)
+const appServer = http.createServer(app)
 
 const websockets = opennebulaWebsockets(appServer) || []
 
@@ -153,6 +122,16 @@ let config = {
   color: 'red',
   message: 'Server could not be started',
 }
+
+guacamole(appServer)
+
+appServer.on('upgrade', (req, socket, head) => {
+  const url = req?.url
+
+  if (url.startsWith(endpointExternalGuacamole)) {
+    guacamoleProxy.upgrade(req, socket, head)
+  }
+})
 
 appServer.listen(port, host, (err) => {
   if (!err) {
@@ -164,8 +143,6 @@ appServer.listen(port, host, (err) => {
   }
   messageTerminal(config)
 })
-vmrc(appServer)
-guacamole(appServer)
 
 /**
  * Handle sigterm and sigint.

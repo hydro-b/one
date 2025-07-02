@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -15,14 +15,11 @@
  * ------------------------------------------------------------------------- */
 
 const Worker = require('tiny-worker')
-const { env } = require('process')
 const { resolve } = require('path')
-
 const { httpResponse } = require('server/utils/server')
-const { defaults, httpCodes } = require('server/utils/constants')
+const { httpCodes } = require('server/utils/constants')
 
 const { internalServerError, ok, noContent, notFound } = httpCodes
-const { defaultWebpackMode } = defaults
 
 /**
  * Use Tiny worker.
@@ -30,12 +27,8 @@ const { defaultWebpackMode } = defaults
  * @returns {object} - Worker
  */
 const useWorker = () => {
-  let workerPath = [__dirname]
-  if (env && env.NODE_ENV === defaultWebpackMode) {
-    workerPath = ['src', 'server', 'utils']
-  } else {
-    require('server/utils/index.worker')
-  }
+  const workerPath = [__dirname]
+  require('server/utils/index.worker')
 
   return new Worker(resolve(...workerPath, 'index.worker.js'))
 }

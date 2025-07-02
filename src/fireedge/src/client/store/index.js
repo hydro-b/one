@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -17,23 +17,25 @@ import { configureStore, Middleware, EnhancedStore } from '@reduxjs/toolkit'
 import { setupListeners } from '@reduxjs/toolkit/query/react'
 import storage from 'redux-persist/lib/storage'
 import { persistStore, persistReducer } from 'redux-persist'
+import { isDevelopment } from '@UtilsModule'
 
-import { isDevelopment } from 'client/utils'
-
-import * as Auth from 'client/features/Auth/slice'
-import * as SupportAuth from 'client/features/SupportAuth/slice'
-import * as General from 'client/features/General/slice'
-import * as Persistent from 'client/features/Persistent/slice'
-import * as Guacamole from 'client/features/Guacamole/slice'
-import { oneApi } from 'client/features/OneApi'
-import { unauthenticatedMiddleware } from 'client/features/middleware'
+import {
+  AuthSlice,
+  GeneralSlice,
+  SupportSlice,
+  PersistentSlice,
+  GuacamoleSlice,
+  ModalsSlice,
+  oneApi,
+  unauthenticatedMiddleware,
+} from '@FeaturesModule'
 
 const persistConfig = {
   key: 'root',
   storage,
 }
 
-const persistedReducer = persistReducer(persistConfig, Persistent.reducer)
+const persistedReducer = persistReducer(persistConfig, PersistentSlice.reducer)
 
 /**
  * @param {object} props - Props
@@ -44,12 +46,13 @@ const persistedReducer = persistReducer(persistConfig, Persistent.reducer)
 export const createStore = ({ initState = {}, extraMiddleware = [] }) => {
   const store = configureStore({
     reducer: {
-      [Auth.name]: Auth.reducer,
-      [SupportAuth.name]: SupportAuth.reducer,
-      [General.name]: General.reducer,
-      [Guacamole.name]: Guacamole.reducer,
+      [AuthSlice.name]: AuthSlice.reducer,
+      [SupportSlice.name]: SupportSlice.reducer,
+      [GeneralSlice.name]: GeneralSlice.reducer,
+      [GuacamoleSlice.name]: GuacamoleSlice.reducer,
+      [ModalsSlice.name]: ModalsSlice.reducer,
       [oneApi.reducerPath]: oneApi.reducer,
-      [Persistent.name]: persistedReducer,
+      [PersistentSlice.name]: persistedReducer,
     },
     devTools: isDevelopment(),
     middleware: (getDefaultMiddleware) =>
@@ -57,7 +60,8 @@ export const createStore = ({ initState = {}, extraMiddleware = [] }) => {
         immutableCheck: true,
         serializableCheck: {
           ignoredActions: ['persist/PERSIST'],
-          ignoredPaths: ['persist'],
+          ignoredActionPaths: ['payload.form', 'payload.onSubmit'],
+          ignoredPaths: ['persist', 'modals'],
         },
       }).concat([
         ...extraMiddleware,

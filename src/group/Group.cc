@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -504,6 +504,7 @@ void Group::del_admin_rules(int user_id)
                  PoolObjectSQL::SECGROUP |
                  PoolObjectSQL::VROUTER |
                  PoolObjectSQL::VMGROUP |
+                 PoolObjectSQL::BACKUPJOB |
                  AclRule::GROUP_ID |
                  oid,
 
@@ -602,7 +603,7 @@ void Group::sunstone_views(const string& user_default, const string& user_views,
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
-int Group::post_update_template(string& error)
+int Group::post_update_template(string& error, Template *_old_tmpl)
 {
     return vm_actions.set_auth_ops(*obj_template, error);
 }

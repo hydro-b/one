@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -51,12 +51,13 @@ module OpenNebula::VirtualMachineExt
                                  'NETWORK_ID', 'VN_MAD', 'SECURITY_GROUPS', 'VLAN_ID',
                                  'BRIDGE_TYPE']
 
-            REMOVE_IMAGE_ATTRS = ['DEV_PREFIX', 'SOURCE', 'ORIGINAL_SIZE', 'SIZE',
-                                  'DISK_SNAPSHOT_TOTAL_SIZE', 'DRIVER', 'IMAGE_STATE', 'SAVE',
+            REMOVE_IMAGE_ATTRS = ['DEV_PREFIX', 'SOURCE', 'DRIVER', 'FORMAT', 'ORIGINAL_SIZE',
+                                  'DISK_SNAPSHOT_TOTAL_SIZE', 'IMAGE_STATE', 'SAVE',
                                   'CLONE', 'READONLY', 'PERSISTENT', 'TARGET', 'ALLOW_ORPHANS',
                                   'CLONE_TARGET', 'CLUSTER_ID', 'DATASTORE', 'DATASTORE_ID',
                                   'DISK_ID', 'DISK_TYPE', 'IMAGE_ID', 'IMAGE', 'IMAGE_UNAME',
-                                  'IMAGE_UID', 'LN_TARGET', 'TM_MAD', 'TYPE', 'OPENNEBULA_MANAGED']
+                                  'IMAGE_UID', 'LN_TARGET', 'TM_MAD', 'TM_MAD_SYSTEM',
+                                  'OPENNEBULA_MANAGED', 'PERSISTENT_SNAPSHOTS']
 
             def save_as_template(name, desc, opts = {})
                 opts = {
@@ -91,35 +92,6 @@ module OpenNebula::VirtualMachineExt
                     rc = poweroff
 
                     raise rc.message if OpenNebula.is_error?(rc)
-                end
-
-                # --------------------------------------------------------------
-                # Ask if source VM is linked clone
-                # --------------------------------------------------------------
-                use_linked_clones = self['USER_TEMPLATE/VCENTER_LINKED_CLONES']
-
-                if use_linked_clones && use_linked_clones.downcase == 'yes'
-                    # Delay the require until it is strictly needed
-                    # This way we can avoid the vcenter driver dependency
-                    # in no vCenter deployments
-                    require 'vcenter_driver'
-
-                    deploy_id = self['DEPLOY_ID']
-                    vm_id = self['ID']
-                    host_id = self['HISTORY_RECORDS/HISTORY[last()]/HID']
-                    vi_client = VCenterDriver::VIClient.new_from_host(host_id)
-
-                    vm = VCenterDriver::VirtualMachine.new(
-                        vi_client,
-                        deploy_id,
-                        vm_id
-                    )
-
-                    error, vm_template_ref = vm.save_as_linked_clones(name)
-
-                    raise error unless error.nil?
-
-                    return vm_template_ref
                 end
 
                 # --------------------------------------------------------------
@@ -171,16 +143,16 @@ module OpenNebula::VirtualMachineExt
                     if !valid?(image_id)
                         logger.info 'Adding volatile disk' if logger
 
-                        disk_str = template_like_str(
-                            'TEMPLATE',
-                            true,
-                            "DISK [ DISK_ID = #{disk_id} ]"
-                        )
+                        disk_str = disk.template_like_str('.').tr("\n", ",\n")
 
-                        replace << "#{disk_str}\n"
+                        replace << "DISK = [ #{disk_str} ]\n"
 
                         next
                     end
+
+                    # SIZE, TYPE is important for volatile disk, remove them now
+                    disk.delete_element('SIZE')
+                    disk.delete_element('TYPE')
 
                     # CDROM disk, copy definition
                     if type == 'CDROM'
@@ -272,7 +244,7 @@ module OpenNebula::VirtualMachineExt
                 # --------------------------------------------------------------
                 # Rollback. Delete the template and the images created
                 # --------------------------------------------------------------
-                if ntid
+                if ntid && !OpenNebula.is_error?(ntid)
                     ntmpl = OpenNebula::Template.new_with_id(ntid, @client)
                     ntmpl.delete
                 end

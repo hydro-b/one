@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -61,7 +61,7 @@ VirtualNetwork::VirtualNetwork(int                      _uid,
 {
     if (_vn_template)
     {
-        obj_template = move(_vn_template);
+        obj_template = std::move(_vn_template);
     }
     else
     {
@@ -69,6 +69,12 @@ VirtualNetwork::VirtualNetwork(int                      _uid,
     }
 
     set_umask(_umask);
+
+    //-------------------- Init search xpath routes ---------------------------
+    ObjectXML::paths = {
+        "/VNET/TEMPLATE/",
+        "/VNET/"
+    };
 };
 
 /* -------------------------------------------------------------------------- */
@@ -117,10 +123,8 @@ LIST OF MANDATORY ARGUMENTS FOR NETWORK DEFINITION
 +----------------+---------+--------+--------------------------+----------------+
 |    Driver      | PHYDEV  | BRIDGE |         VLAN_ID          |      OTHER     |
 +----------------+---------+--------+--------------------------+----------------+
-| vcenter        | no      | no     | no                       |                |
 | dummy          | no      | yes    | no                       |                |
 | bridge         | no      | no     | no                       |                |
-| ebtables       | no      | no     | no                       |                |
 | fw             | no      | no     | no                       |                |
 | 802.1q         | yes     | no     | yes or AUTOMATIC         |                |
 | vxlan          | yes     | no     | yes or AUTOMATIC         |                |
@@ -153,9 +157,7 @@ int VirtualNetwork::parse_phydev_vlans(const Template* tmpl, const string& vn_ma
             check_outer  = true;
 
         case VirtualNetwork::BRIDGE:
-        case VirtualNetwork::VCENTER:
         case VirtualNetwork::OVSWITCH:
-        case VirtualNetwork::EBTABLES:
         case VirtualNetwork::FW:
             break;
 
@@ -373,7 +375,7 @@ error_common:
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
-int VirtualNetwork::post_update_template(string& error)
+int VirtualNetwork::post_update_template(string& error, Template *_old_tmpl)
 {
     string new_bridge, new_br_type;
     string sg_str;
@@ -430,9 +432,11 @@ int VirtualNetwork::post_update_template(string& error)
 
     erase_template_attribute("BRIDGE_TYPE", new_br_type);
 
-    if (str_to_bridge_type(new_br_type) != UNDEFINED)
+    auto rc = parse_bridge_type(vn_mad, error);
+
+    if (rc != 0)
     {
-        bridge_type = new_br_type;
+        return rc;
     }
 
     add_template_attribute("BRIDGE_TYPE", bridge_type);
@@ -1486,9 +1490,9 @@ int VirtualNetwork::replace_template(const std::string& tmpl_str,
 
     set_updated_attributes(new_tmpl.get(), true);
 
-    obj_template = move(new_tmpl);
+    obj_template = std::move(new_tmpl);
 
-    if (post_update_template(error) == -1)
+    if (post_update_template(error, nullptr) == -1)
     {
         return -1;
     }
@@ -1537,7 +1541,7 @@ int VirtualNetwork::append_template(
 
     obj_template->merge(new_tmpl.get());
 
-    if (post_update_template(error) == -1)
+    if (post_update_template(error, nullptr) == -1)
     {
         return -1;
     }

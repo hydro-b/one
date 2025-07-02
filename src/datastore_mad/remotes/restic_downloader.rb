@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # ---------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                  #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                  #
 #                                                                              #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may      #
 # not use this file except in compliance with the License. You may obtain      #
@@ -29,23 +29,7 @@ else
 end
 
 # %%RUBYGEMS_SETUP_BEGIN%%
-if File.directory?(GEMS_LOCATION)
-    real_gems_path = File.realpath(GEMS_LOCATION)
-    if !defined?(Gem) || Gem.path != [real_gems_path]
-        $LOAD_PATH.reject! {|l| l =~ /vendor_ruby/ }
-
-        # Suppress warnings from Rubygems
-        # https://github.com/OpenNebula/one/issues/5379
-        begin
-            verb = $VERBOSE
-            $VERBOSE = nil
-            require 'rubygems'
-            Gem.use_paths(real_gems_path)
-        ensure
-            $VERBOSE = verb
-        end
-    end
-end
+require 'load_opennebula_paths'
 # %%RUBYGEMS_SETUP_END%%
 
 $LOAD_PATH << RUBY_LIB_LOCATION
@@ -64,11 +48,13 @@ SSH_OPTS = '-q -o ControlMaster=no -o ControlPath=none -o ForwardAgent=yes'
 
 # restic://<datastore_id>/<bj_id>/<id>:<snapshot_id>,.../<file_name>
 restic_url = ARGV[0]
-tokens     = restic_url.delete_prefix('restic://').split('/')
+
+proto, url = restic_url.split(%r{://}, 2)
+tokens     = url.split('/', 4)
 ds_id      = tokens[0].to_i
 bj_id      = tokens[1]
 snaps      = tokens[2].split(',').map {|s| s.split(':')[1] }
-disk_path  = tokens[3..-1].join('/')
+disk_path  = "/#{tokens[3]}"
 disk_index = Pathname.new(disk_path).basename.to_s.split('.')[1]
 vm_id      = disk_path.match('/(\d+)/backup/[^/]+$')[1].to_i
 
@@ -109,52 +95,60 @@ end
 # Prepare image.
 
 begin
-    tmp_dir = "#{rds.tmp_dir}/#{SecureRandom.uuid}"
-
+    tmp_dir    = "#{rds.tmp_dir}/#{SecureRandom.uuid}"
     paths      = rds.pull_chain(snaps, disk_index, rds.sftp, tmp_dir)
-    disk_paths = paths[:disks][:by_index][disk_index]
+    disk_paths = paths[:disks][:by_index][disk_index].map {|d| Pathname.new(d) }
+    tmp_path   = "#{tmp_dir}/#{disk_paths.last.basename}"
 
-    tmp_path = "#{tmp_dir}/#{Pathname.new(disk_paths.last).basename}"
+    if proto == 'restic+rbd'
+        # FULL/INCREMENTAL BACKUP (RBD)
 
-    # FULL BACKUP
-
-    if disk_paths.size == 1
-        # Return shell code snippets according to the downloader's interface.
-        STDOUT.puts <<~EOS
-            command="ssh #{SSH_OPTS} '#{rds.user}@#{rds.sftp}' cat '#{tmp_path}'"
-            clean_command="ssh #{SSH_OPTS} '#{rds.user}@#{rds.sftp}' rm -rf '#{tmp_dir}/'"
+        tmp_path = "#{tmp_dir}/disk.#{disk_index}.#{snaps.last[0]}.tar.gz"
+        script = <<~EOS
+            set -e -o pipefail; shopt -qs failglob
+            mkdir -p '#{tmp_dir}/'
+            tar zcvf '#{tmp_path}' -C #{tmp_dir} #{disk_paths.map {|d| d.basename }.join(' ')}
+            rm #{disk_paths.map {|d| "#{tmp_dir}/#{d.basename}" }.join(' ')}
         EOS
-        exit(0)
+
+        rc = TransferManager::Action.ssh('prepare_image',
+                                         :host     => "#{rds.user}@#{rds.sftp}",
+                                         :forward  => true,
+                                         :cmds     => script,
+                                         :nostdout => false,
+                                         :nostderr => false)
+
+        raise StandardError, "Unable to prepare image: #{rc.stderr}" if rc.code != 0
+    elsif disk_paths.size == 1
+        # FULL BACKUP (QCOW2)
+
+        # No additional preparation needed
+        true
+    else
+        # INCREMENTAL BACKUP (QCOW2)
+
+        script = [<<~EOS]
+            set -e -o pipefail; shopt -qs failglob
+            #{rds.resticenv_sh}
+            #{TransferManager::BackupImage.reconstruct_chain(disk_paths, :workdir => tmp_dir)}
+            #{TransferManager::BackupImage.merge_chain(disk_paths, :workdir => tmp_dir)}
+        EOS
+
+        rc = TransferManager::Action.ssh('prepare_image',
+                                         :host     => "#{rds.user}@#{rds.sftp}",
+                                         :forward  => true,
+                                         :cmds     => script.join("\n"),
+                                         :nostdout => true,
+                                         :nostderr => false)
+
+        raise StandardError, "Unable to prepare image: #{rc.stderr}" if rc.code != 0
     end
-
-    # INCREMENTAL BACKUP
-
-    script = [<<~EOS]
-        set -e -o pipefail; shopt -qs failglob
-        #{rds.resticenv_sh}
-    EOS
-
-    script << TransferManager::BackupImage.reconstruct_chain(disk_paths,
-                                                             :workdir => tmp_dir)
-
-    script << TransferManager::BackupImage.merge_chain(disk_paths,
-                                                       :workdir => tmp_dir)
-
-    rc = TransferManager::Action.ssh 'prepare_image',
-                                     :host     => "#{rds.user}@#{rds.sftp}",
-                                     :forward  => true,
-                                     :cmds     => script.join("\n"),
-                                     :nostdout => true,
-                                     :nostderr => false
-
-    raise StandardError, "Unable to prepare image: #{rc.stderr}" if rc.code != 0
 
     # Return shell code snippets according to the downloader's interface.
     STDOUT.puts <<~EOS
         command="ssh #{SSH_OPTS} '#{rds.user}@#{rds.sftp}' cat '#{tmp_path}'"
         clean_command="ssh #{SSH_OPTS} '#{rds.user}@#{rds.sftp}' rm -rf '#{tmp_dir}/'"
     EOS
-    exit(0)
 rescue StandardError => e
     STDERR.puts e.full_message
     exit(-1)

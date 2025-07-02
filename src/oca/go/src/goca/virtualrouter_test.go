@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -185,6 +185,8 @@ func TestVirtualRouter(t *testing.T) {
 	vn_tmpl.Add(vnkeys.VNMad, "dummy")
 
 	vnet_id, _ := testCtrl.VirtualNetworks().Create(vn_tmpl.String(), 0)
+	vnetC := testCtrl.VirtualNetwork(vnet_id)
+	WaitState(t, vnetC, "READY")
 
 	nic_tmpl := shared.NewNIC()
 	nic_tmpl.Add(shared.Network, "go-net")

@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -16,6 +16,11 @@
 # limitations under the License.                                             #
 #--------------------------------------------------------------------------- #
 
+require 'open3'
+require 'yaml'
+
+require 'fileutils'
+
 #-------------------------------------------------------------------------------
 #  This class represents a base domain, information includes:
 #-------------------------------------------------------------------------------
@@ -23,9 +28,28 @@ class BaseDomain
 
     attr_reader :vm, :name
 
+    MONITOR_KEYS = [
+        'cpu',
+        'memory',
+        'netrx',
+        'nettx',
+        'diskrdbytes',
+        'diskwrbytes',
+        'diskrdiops',
+        'diskwriops'
+    ]
+
+    DB_MONITOR_KEYS = MONITOR_KEYS.clone
+    DB_MONITOR_KEYS.freeze
+
+    DB_PATH = '/var/tmp/one_db'
+
     def initialize(name)
         @name = name
         @vm   = {}
+
+        @predictions  = false
+        @db_retention = 4 # num
     end
 
     # Get domain attribute by name.
@@ -61,11 +85,66 @@ class BaseDomain
             mon_s << "#{k.upcase}=\"#{@vm[k.to_sym]}\"\n"
         end
 
+        mon_s << predictions if @predictions
+
         Base64.strict_encode64(mon_s)
     end
 
-    MONITOR_KEYS = ['cpu', 'memory', 'netrx', 'nettx', 'diskrdbytes', 'diskwrbytes', 'diskrdiops',
-                    'diskwriops']
+    #  Write to metric values to the VM SQL DB (named metrics.db)
+    #  The is stored in the VM folder of the system datastore
+    def to_sql
+        return unless @vm[:id]
+
+        FileUtils.mkdir_p(DB_PATH)
+
+        db = SQLite3::Database.new(File.join(DB_PATH, "#{@vm[:id]}.db"))
+
+        timestamp = Time.now.to_i
+
+        DB_MONITOR_KEYS.each do |k|
+            next unless @vm[k.to_sym]
+
+            store_metric_db(db, @vm[:id], k, timestamp, @vm[k.to_sym])
+        end
+
+        db.close
+    rescue StandardError
+    end
+
+    # Compute forecast values for the VM metrics
+    def predictions
+        ''
+    end
+
+    private
+
+    def store_metric_db(db, vm_id, metric_name, timestamp, value)
+        table_name = "virtualmachine_#{vm_id}_#{metric_name}_monitoring"
+
+        create_table_query = <<-SQL
+            CREATE TABLE IF NOT EXISTS #{table_name} (
+            TIMESTAMP INTEGER PRIMARY KEY,
+            VALUE REAL NOT NULL
+        );
+        SQL
+        db.execute(create_table_query)
+
+        create_trigger_query = <<-SQL
+            CREATE TRIGGER IF NOT EXISTS delete_old_records_#{table_name}
+            AFTER INSERT ON #{table_name}
+            BEGIN
+                DELETE FROM #{table_name}
+                WHERE TIMESTAMP < strftime('%s', 'now', '-#{@db_retention} week');
+            END;
+        SQL
+        db.execute(create_trigger_query)
+
+        insert_query = <<-SQL
+            INSERT INTO #{table_name} (TIMESTAMP, VALUE)
+            VALUES (?, ?);
+        SQL
+        db.execute(insert_query, [timestamp, value])
+    end
 
 end
 
@@ -119,6 +198,13 @@ class BaseDomains
         end
 
         mon_s
+    end
+
+    # Write VM information into the VM timeseries DB
+    def to_sql
+        @vms.each do |_uuid, vm|
+            vm.to_sql
+        end
     end
 
     private

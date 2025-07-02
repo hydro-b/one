@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -52,7 +52,6 @@ string VirtualMachineBase::to_xml() const
 int VirtualMachineBase::init_attributes()
 {
     std::vector<xmlNodePtr> nodes;
-    std::vector<VectorAttribute*> attrs;
 
     int rc;
     int action;
@@ -114,14 +113,6 @@ int VirtualMachineBase::init_attributes()
         user_template->from_xml_node(nodes[0]);
 
         free_nodes(nodes);
-
-        public_cloud = (user_template->get("PUBLIC_CLOUD", attrs) > 0);
-
-        if (public_cloud == false)
-        {
-            attrs.clear();
-            public_cloud = (user_template->get("EC2", attrs) > 0);
-        }
     }
     else
     {

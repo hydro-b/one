@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -33,7 +33,8 @@
 
 class AuthRequest;
 class Snapshots;
-class HostShareCapacity;
+
+struct HostShareCapacity;
 
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
@@ -249,6 +250,11 @@ public:
         resched = do_sched ? 1 : 0;
     };
 
+    bool is_resched()
+    {
+        return resched == 1;
+    }
+
     // -------------------------------------------------------------------------
     // Log & Print
     // -------------------------------------------------------------------------
@@ -309,7 +315,7 @@ public:
     /**
      * @return monitor info
      */
-    VirtualMachineMonitorInfo& get_info()
+    const VirtualMachineMonitorInfo& get_monitoring() const
     {
         return monitoring;
     }
@@ -373,8 +379,11 @@ public:
 
     bool test_machine_type(const std::string& machine_type) const
     {
-        VectorAttribute * os = obj_template->get("OS");
+        return test_machine_type(obj_template->get("OS"), machine_type);
+    }
 
+    static bool test_machine_type(VectorAttribute * os, const std::string& machine_type)
+    {
         if ( os == nullptr )
         {
             return false;
@@ -413,6 +422,11 @@ public:
     // ------------------------------------------------------------------------
     // History
     // ------------------------------------------------------------------------
+    /*
+     *  Loads all VM history recordsfrom the database
+    */
+    int load_history(SqlDB * db);
+
     /**
      *  Adds a new history record an writes it in the database.
      */
@@ -624,16 +638,6 @@ public:
     };
 
     /**
-     *  Returns if the host is a public cloud based on the system ds and tm_mad.
-     *  The hasHistory() function MUST be called before this one.
-     *    @return the hostname
-     */
-    bool get_host_is_cloud() const
-    {
-        return ((history->ds_id == -1) && history->tm_mad_name.empty());
-    };
-
-    /**
      * Updates the current hostname. The hasHistory()
      *  function MUST be called before this one.
      * @param hostname New hostname
@@ -698,6 +702,16 @@ public:
     {
         return history->cid;
     }
+
+    /**
+     *  Set new cluster id. The hasHistory()
+     *  function MUST be called before this one.
+     */
+    void set_cid(int cid)
+    {
+        history->cid = cid;
+    }
+
 
     /**
      *  Get cluster id where the VM was executing. The hasPreviousHistory()
@@ -884,6 +898,26 @@ public:
         previous_history->req_id = rid;
     };
 
+    void plan_id(int id)
+    {
+        history->plan_id = id;
+    }
+
+    int plan_id() const
+    {
+        return history->plan_id;
+    }
+
+    void action_id(int id)
+    {
+        history->action_id = id;
+    }
+
+    int action_id() const
+    {
+        return history->action_id;
+    }
+
     /**
      *  Release VNC port
      */
@@ -1034,9 +1068,18 @@ public:
 
     /**
      *  Get the VM physical capacity requirements for the host.
-     *    @param sr the HostShareCapacity to store the capacity request.
+     *    @param sr the HostShareCapacity to store the capacity request. The sr
+     *      use pointers to VM template, do not destroy the VM object before sr.
      */
     void get_capacity(HostShareCapacity &sr) const;
+
+    /**
+     *  Get the VM physical capacity from the previous history
+     *    @param sr the HostShareCapacity to store the capacity request.
+     *    @param tmpl temporary object, to hold pointers, do not release the tmpl
+     *      before the HostShareCapacity
+     */
+    void get_previous_capacity(HostShareCapacity &sr, Template &tmpl) const;
 
     /**
      * Adds automatic placement requirements: Datastore and Cluster
@@ -1133,6 +1176,16 @@ public:
     }
 
     /**
+     * Returns a set of the NIC IDs that uses NETWORK_MODE auto
+     *     @param ids a set of NIC IDs
+     *     @return the number of ids in the set
+     */
+    int get_auto_nics(std::set<int>& ids)
+    {
+        return nics.get_auto_nics(ids);
+    }
+
+    /**
      * Returns a set of the security group IDs in use in this VM.
      *     @param sgs a set of security group IDs
      */
@@ -1177,25 +1230,11 @@ public:
      */
     void release_vmgroup();
 
-    // ------------------------------------------------------------------------
-    // Imported VM interface
-    // ------------------------------------------------------------------------
-    /**
-     *  Check if the VM is imported
-     */
-    bool is_imported() const;
 
     /**
-     *  Return state of the VM right before import
+     *  @return the ID of the VMGroup, -1 if none
      */
-    std::string get_import_state() const;
-
-    /**
-     * Checks if the current VM MAD supports the given action for imported VMs
-     * @param action VM action to check
-     * @return true if the current VM MAD supports the given action for imported VMs
-     */
-    bool is_imported_action_supported(VMActions::Action action) const;
+    int vmgroup_id();
 
     // ------------------------------------------------------------------------
     // Virtual Router related functions
@@ -1461,7 +1500,14 @@ public:
     // ------------------------------------------------------------------------
 
     /**
-     *  Checks the attributes of a PCI device
+     *  Checks the attributes of a PCI device. It also cleans allocation attributes:
+     *    - NUMA_NODE
+     *    - UUID
+     *    - DOMAIN, BUS, SLOT, FUNCITION
+     *    - ADDRESS, PREV_ADDRESS
+     *    - MDEV_MODE
+     *
+     *  VM_BUS is also set to the the default PCI passthrough bus if not set.
      */
     static int check_pci_attributes(VectorAttribute * pci, std::string& err);
 
@@ -1586,6 +1632,11 @@ public:
     void delete_non_persistent_disk_snapshots(Template& vm_quotas,
                                               std::vector<Template *>& ds_quotas)
     {
+        if (hasHistory())
+        {
+            vm_quotas.replace("CLUSTER_ID", get_cid());
+        }
+
         disks.delete_non_persistent_snapshots(vm_quotas, ds_quotas);
     }
 
@@ -1826,17 +1877,12 @@ private:
     /**
      *  History record, for the current host
      */
-    History *   history;
+    std::unique_ptr<History> history;
 
     /**
      *  History record, for the previous host
      */
-    History *   previous_history;
-
-    /**
-     *  Complete set of history records for the VM
-     */
-    std::vector<History *> history_records;
+    std::unique_ptr<History> previous_history;
 
     /**
      *  VirtualMachine disks
@@ -2186,56 +2232,6 @@ private:
      *  @return 0 if success
      */
     int get_vmgroup(std::string& error);
-
-    // ------------------------------------------------------------------------
-    // Public cloud templates related functions
-    // ------------------------------------------------------------------------
-    /**
-     * Gets the list of public clouds defined in this VM.
-     * @param clouds list to store the cloud hypervisors in the template
-     * @return the number of public cloud hypervisors
-     */
-    int get_public_clouds(std::set<std::string> &clouds) const
-    {
-        get_public_clouds("PUBLIC_CLOUD", clouds);
-
-        return clouds.size();
-    };
-
-    /**
-     * Same as above but specifies the attribute name to handle old versions
-     * @param name Attribute name
-     * @param clouds list to store the cloud hypervisors in the template
-     */
-    void get_public_clouds(const std::string& name,
-                           std::set<std::string> &clouds) const;
-
-    /**
-     *  Parse the public cloud attributes and subsititue variable definition
-     *  for the values in the template, i.e.:
-     *    INSTANCE_TYPE="m1-small"
-     *
-     *    PUBLIC_CLOUD=[ TYPE="ec2", INSTANCE="$INSTANCE_TYPE"...
-     *
-     *  @param error description if any
-     *  @return -1 in case of error
-     */
-    int parse_public_clouds(std::string& error)
-    {
-        int rc = parse_public_clouds("PUBLIC_CLOUD", error);
-
-        if (rc == 0)
-        {
-            rc = parse_public_clouds("EC2", error);
-        }
-
-        return rc;
-    };
-
-    /**
-     * Same as above but specifies the attribute name to handle old versions
-     */
-    int parse_public_clouds(const char *name, std::string& error);
 
     /**
      *  Encrypt all secret attributes

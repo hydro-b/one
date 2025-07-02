@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -44,6 +44,7 @@ type Image struct {
 	DiskType       *int                `xml:"DISK_TYPE,omitempty"`
 	Persistent     *int                `xml:"PERSISTENT,omitempty"`
 	RegTime        int                 `xml:"REGTIME,omitempty"`
+	ModTime        int                 `xml:"MODTIME,omitempty"`
 	Source         string              `xml:"SOURCE,omitempty"`
 	Path           string              `xml:"PATH,omitempty"`
 	Fs             string              `xml:"FS,omitempty"`

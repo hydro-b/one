@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -47,23 +47,7 @@ end
 ONED_CONF = "#{ETC_LOCATION}/oned.conf"
 
 # %%RUBYGEMS_SETUP_BEGIN%%
-if File.directory?(GEMS_LOCATION)
-    real_gems_path = File.realpath(GEMS_LOCATION)
-    if !defined?(Gem) || Gem.path != [real_gems_path]
-        $LOAD_PATH.reject! {|l| l =~ /vendor_ruby/ }
-
-        # Suppress warnings from Rubygems
-        # https://github.com/OpenNebula/one/issues/5379
-        begin
-            verb = $VERBOSE
-            $VERBOSE = nil
-            require 'rubygems'
-            Gem.use_paths(real_gems_path)
-        ensure
-            $VERBOSE = verb
-        end
-    end
-end
+require 'load_opennebula_paths'
 # %%RUBYGEMS_SETUP_END%%
 
 $LOAD_PATH << RUBY_LIB_LOCATION
@@ -120,7 +104,7 @@ SQLITE={
 }
 
 ###############################################################################
-# MySQL and PostgreSQL options
+# MySQL options
 ###############################################################################
 TYPE={
     :name => 'type',
@@ -138,8 +122,7 @@ SERVER={
     :short => '-S host',
     :large => '--server host',
     :format => String,
-    :description => 'MySQL or PostgreSQL server hostname or IP. ' \
-                    'Defaults to localhost',
+    :description => 'MySQL server hostname or IP. Defaults to localhost',
     :proc => lambda {|o, options|
         options[:server]  = o
     }
@@ -150,8 +133,7 @@ PORT={
     :short => '-P port',
     :large => '--port port',
     :format => String,
-    :description => 'MySQL or PostgreSQL server port. Defaults to ' \
-                    '3306 for MySQL and 5432 for PostgreSQL',
+    :description => 'MySQL server port. Defaults to 3306',
     :proc => lambda {|o, options|
         options[:port] = o
     }
@@ -162,7 +144,7 @@ USERNAME={
     :short => '-u user',
     :large => '--username user',
     :format => String,
-    :description => 'MySQL or PostgreSQL username',
+    :description => 'MySQL username',
     :proc => lambda {|o, options|
         options[:user]    = o
     }
@@ -173,8 +155,7 @@ PASSWORD={
     :short => '-p pass',
     :large => '--password pass',
     :format => String,
-    :description => 'MySQL or PostgreSQL password. Leave unset ' \
-                    'to be prompted for it',
+    :description => 'MySQL password. Leave unset to be prompted for it',
     :proc => lambda {|o, options|
         options[:passwd]  = o
     }
@@ -185,7 +166,7 @@ DBNAME={
     :short => '-d dbname',
     :large => '--dbname dbname',
     :format => String,
-    :description => 'MySQL or PostgreSQL DB name for OpenNebula',
+    :description => 'MySQL DB name for OpenNebula',
     :proc => lambda {|o, options|
         options[:db_name] = o
     }
@@ -195,7 +176,7 @@ ENCODING={
     :name => 'encoding',
     :large => '--encoding charset',
     :format => String,
-    :description => 'MySQL or PostgreSQL encoding to use for the connection',
+    :description => 'MySQL encoding to use for the connection',
     :proc => lambda {|o, options|
         options[:encoding] = o
     }
@@ -331,7 +312,7 @@ EXPR= {
 DRY= {
     :name => 'dry',
     :large => '--dry',
-    :description => 'Do not write in the database, output xml'
+    :description => 'Do not write in the database, output on stdout'
 }
 
 DELETE= {
@@ -482,26 +463,10 @@ CommandParser::CmdParser.new(ARGV) do
         Checks the consistency of the DB, and fixes the problems found
     EOT
 
-    command :fsck, fsck_desc, :options=>[FORCE, BACKUP] do
+    command :fsck, fsck_desc, :options=>[FORCE, BACKUP, DRY] do
         begin
             helper = OneDB.new(options)
             helper.fsck(options)
-        rescue StandardError => e
-            [-1, e.message]
-        end
-    end
-
-    ###########################################################################
-    # Migrate vcenter 54
-    ###########################################################################
-    vcenter_one54_desc = <<-EOT.unindent
-        Migrate VM and templates so they can be used by OpenNebula 5.4
-    EOT
-
-    command :"vcenter-one54", vcenter_one54_desc, :options=>[FORCE, BACKUP] do
-        begin
-            helper = OneDB.new(options)
-            helper.vcenter_one54(options)
         rescue StandardError => e
             [-1, e.message]
         end
@@ -555,6 +520,10 @@ CommandParser::CmdParser.new(ARGV) do
     purge_history_desc = <<-EOT.unindent
         Deletes all but the last two history records from non DONE VMs. A single VM
         history deletion can be specified with the --id option.
+        If --id is specified together with --start and --end - deletes all the records
+        of a single vm within the specified time range.
+        If --start and --end specified without an --id - deletes all the records of
+        vms created within the specified time range.
 
         #{LIVE_ACTION_HELP}
 

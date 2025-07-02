@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -52,10 +52,11 @@ type Service struct {
 type Role struct {
     Name                string             `json:"name,omitempty"`
     Cardinality         int                `json:"cardinality"`
-    VMTemplate          int                `json:"vm_template,omitempty"`
+    Type                string             `json:"type,omitempty"`
+    TemplateID          int                `json:"template_id"`
     ShutdownAction      string             `json:"shutdown_action,omitempty"`
     Parents             []string           `json:"parents,omitempty"`
-    VMTemplateContents  string             `json:"vm_template_contents,omitempty"`
+    TemplateContents    map[string]string  `json:"template_contents,omitempty"`
     MinVMs              int                `json:"min_vms,omitempty"`
     MaxVMS              int                `json:"max_vms,omitempty"`
     Cooldown            int                `json:"cooldown,omitempty"`

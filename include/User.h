@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -107,7 +107,7 @@ public:
      *    @param error_str Returns the error reason, if any
      *    @return true if the string is valid
      */
-    static bool pass_is_valid(const std::string& pass, std::string& error_str);
+    static bool pass_is_valid(const std::string& pass, const std::string& auth_driver, std::string& error_str);
 
     /**
      *  Sets user password. It checks that the new password does not contain
@@ -422,7 +422,7 @@ protected:
      *    @param error string describing the error if any
      *    @return 0 on success
      */
-    int post_update_template(std::string& error) override;
+    int post_update_template(std::string& error, Template *_old_tmpl) override;
 };
 
 #endif /*USER_H_*/

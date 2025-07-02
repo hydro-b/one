@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -29,23 +29,7 @@ else
 end
 
 # %%RUBYGEMS_SETUP_BEGIN%%
-if File.directory?(GEMS_LOCATION)
-    real_gems_path = File.realpath(GEMS_LOCATION)
-    if !defined?(Gem) || Gem.path != [real_gems_path]
-        $LOAD_PATH.reject! {|l| l =~ /vendor_ruby/ }
-
-        # Suppress warnings from Rubygems
-        # https://github.com/OpenNebula/one/issues/5379
-        begin
-            verb = $VERBOSE
-            $VERBOSE = nil
-            require 'rubygems'
-            Gem.use_paths(real_gems_path)
-        ensure
-            $VERBOSE = verb
-        end
-    end
-end
+require 'load_opennebula_paths'
 # %%RUBYGEMS_SETUP_END%%
 
 $LOAD_PATH << RUBY_LIB_LOCATION
@@ -101,14 +85,6 @@ CommandParser::CmdParser.new(ARGV) do
                         'deleted in the hosts.'
     }
 
-    TYPE = {
-        :name => 'type',
-        :short => '-t remote_provider',
-        :large => '--type remote_provider',
-        :description => 'Use type to create a host using Cloud Bursting',
-        :format => String
-    }
-
     IPV4 = {
         :name  => 'ipv4',
         :large => '--ipv4 ip1,ip2',
@@ -123,7 +99,7 @@ CommandParser::CmdParser.new(ARGV) do
         :format => Array
     }
 
-    CREAT_OPTIONS = [IM, VMM, OneClusterHelper::CLUSTER, TYPE]
+    CREAT_OPTIONS = [IM, VMM, OneClusterHelper::CLUSTER]
     SYNC_OPTIONS  = [OneClusterHelper::CLUSTER, FORCE, SSH]
 
     ########################################################################
@@ -203,10 +179,8 @@ CommandParser::CmdParser.new(ARGV) do
 
         cid = options[:cluster] || ClusterPool::NONE_CLUSTER_ID
         helper.create_resource(options) do |host|
-            if !options[:type].nil?
-                str = helper.set_hybrid(options[:type], args[1])
-            end
             rc = host.allocate(args[0], options[:im], options[:vm], cid)
+
             if !OpenNebula.is_error?(rc) && !options[:type].nil?
                 host.update(str, true)
             end
@@ -351,23 +325,6 @@ CommandParser::CmdParser.new(ARGV) do
     command :rename, rename_desc, :hostid, :name do
         helper.perform_action(args[0], options, 'renamed') do |o|
             o.rename(args[1])
-        end
-    end
-
-    importvm_desc = <<-EOT.unindent
-        Import VM to OpenNebula
-    EOT
-
-    command :importvm,
-            importvm_desc,
-            :hostid,
-            :name,
-            :options => [IPV4, IPV6] do
-        helper.perform_action(args[0], options, 'imported') do |o|
-            rc = o.info
-            next rc if OpenNebula.is_error?(rc)
-
-            o.import_wild(args[1], options[:ipv4], options[:ipv6])
         end
     end
 

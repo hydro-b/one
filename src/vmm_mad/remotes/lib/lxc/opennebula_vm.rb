@@ -1,7 +1,7 @@
 #!/usr/bin/ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -29,7 +29,7 @@ require 'device'
 
 require_relative '../lib/xmlparser'
 require_relative '../lib/opennebula_vm'
-require_relative '../../scripts_common'
+require_relative '../../DriverLogger'
 
 # -----------------------------------------------------------------------------
 # This class reads and holds configuration attributes for the LXC driver
@@ -69,7 +69,7 @@ class LXCConfiguration < Hash
         begin
             merge!(YAML.load_file("#{__dir__}/#{LXCRC}"))
         rescue StandardError => e
-            OpenNebula.log_error e
+            OpenNebula::DriverLogger.log_error e
         end
 
         merge!(FIXED_CONFIGURATION)
@@ -192,6 +192,7 @@ class LXCVM < OpenNebulaVM
         # 5 = error, 6 = critical, 7 = alert, 8 = fatal
         lxc['lxc.log.level'] = 5
         lxc['lxc.log.file'] = "/var/log/lxc/one-#{@vm_id}.log"
+        lxc['lxc.console.logfile'] = "/var/log/lxc/one-#{@vm_id}.console"
 
         # Parse RAW section (lxc values should prevail over raw section values)
         lxc = parse_raw.merge(lxc)
@@ -485,7 +486,7 @@ class Disk
             break unless device.empty?
         end
 
-        OpenNebula.log("No block device on #{@mountpoint}") if device.empty?
+        OpenNebula::DriverLogger.log("No block device on #{@mountpoint}") if device.empty?
 
         device
     end

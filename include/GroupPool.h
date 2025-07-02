@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -42,7 +42,7 @@ public:
     /**
      *  Identifier for the oneadmin group
      */
-    static const int ONEADMIN_ID;
+    static constexpr int ONEADMIN_ID = 0;
 
     /**
      *  Default name for the users group
@@ -52,7 +52,7 @@ public:
     /**
      *  Identifier for the user group
      */
-    static const int USERS_ID;
+    static constexpr int USERS_ID = 1;
 
     /* ---------------------------------------------------------------------- */
     /* Methods for DB management                                              */
@@ -67,7 +67,7 @@ public:
      *
      *    @return the oid assigned to the object, -1 in case of failure
      */
-    int allocate(std::string              name,
+    int allocate(const std::string&       name,
                  int *                    oid,
                  std::string&             error_str);
 

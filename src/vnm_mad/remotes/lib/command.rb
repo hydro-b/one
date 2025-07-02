@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -15,6 +15,7 @@
 #--------------------------------------------------------------------------- #
 
 require 'open3'
+require 'DriverLogger'
 
 module VNMMAD
 
@@ -25,17 +26,20 @@ module VNMMAD
         # to local installations. Any modification requires to sync the hosts
         # with onehost sync command.
         COMMANDS = {
-            :ebtables   => 'sudo -n ebtables --concurrent',
-            :iptables   => 'sudo -n iptables -w 3 -W 20000',
-            :ip6tables  => 'sudo -n ip6tables -w 3 -W 20000',
-            :ip         => 'sudo -n ip',
-            :ip_unpriv  => 'ip',
-            :virsh      => 'virsh -c qemu:///system',
-            :ovs_vsctl  => 'sudo -n ovs-vsctl',
-            :ovs_ofctl  => 'sudo -n ovs-ofctl',
-            :ovs_appctl => 'sudo -n ovs-appctl',
-            :lsmod      => 'lsmod',
-            :ipset      => 'sudo -n ipset'
+            :iptables      => 'sudo -n iptables -w 3',
+            :ip6tables     => 'sudo -n ip6tables -w 3',
+            :ip            => 'sudo -n ip',
+            :ip_unpriv     => 'ip',
+            :virsh         => 'virsh -c qemu:///system',
+            :ovs_vsctl     => 'sudo -n ovs-vsctl',
+            :ovs_ofctl     => 'sudo -n ovs-ofctl',
+            :ovs_appctl    => 'sudo -n ovs-appctl',
+            :lsmod         => 'lsmod',
+            :ipset         => 'sudo -n ipset',
+            :nft           => 'sudo -n nft',
+            :tproxy        => 'sudo -n /var/tmp/one/vnm/tproxy',
+            :ip_netns_exec => 'sudo -nE /var/tmp/one/vnm/ip_netns_exec',
+            :bridge        => 'sudo -n bridge'
         }
 
         # Adjust :ip[6]tables commands to work with legacy versions
@@ -76,7 +80,7 @@ module VNMMAD
             def run!
                 out = ''
 
-                each  do |c|
+                each do |c|
                     out << `#{c}`
 
                     # rubocop:disable Style/SpecialGlobalVars
@@ -127,6 +131,56 @@ module VNMMAD
                 end
 
                 Open3.capture3(cmd_str)
+            end
+
+            # Executes a command (paranoid version)
+            #   @return [String, String, Process::Status] the standard output,
+            #                                             standard error and
+            #                                             status returned by
+            #                                             Open3.capture3
+            def self.no_shell(sym, *args, **opts)
+                terminate = (t = opts.delete(:term)).nil? ? true : t
+
+                if args[0].is_a?(Hash)
+                    env = args[0]
+                    cmd = COMMANDS[sym].split(' ') + args[1..(-1)].to_a
+                else
+                    env = {}
+                    cmd = COMMANDS[sym].split(' ') + args[0..(-1)].to_a
+                end
+
+                o, e, s = Open3.capture3(env, *cmd, **opts)
+
+                env = env.empty? ? '' : env.map {|k, v| "#{k}='#{v}' " }.join
+                cmd = cmd.join(' ')
+
+                if s.success?
+                    OpenNebula::DriverLogger.log_info "Executed \"#{env}#{cmd}\"."
+
+                    OpenNebula::DriverLogger.log_info Base64.strict_encode64(opts[:stdin_data]) \
+                        unless opts[:stdin_data].nil?
+                else
+                    if terminate
+                        OpenNebula::DriverLogger.log_error "Command \"#{env}#{cmd}\" failed."
+
+                        OpenNebula::DriverLogger.log_error \
+                            Base64.strict_encode64(opts[:stdin_data]) unless opts[:stdin_data].nil?
+
+                        OpenNebula::DriverLogger.log_error e
+
+                        exit(s.exitstatus)
+                    else
+                        OpenNebula::DriverLogger.log_error \
+                            "Command \"#{env}#{cmd}\" failed (recovered)."
+
+                        OpenNebula::DriverLogger.log_error \
+                            Base64.strict_encode64(opts[:stdin_data]) unless opts[:stdin_data].nil?
+
+                        OpenNebula::DriverLogger.log_error e
+                    end
+                end
+
+                [o, e, s]
             end
 
         end

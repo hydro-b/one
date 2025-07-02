@@ -12,6 +12,12 @@ module OneDBFsck
         log_time
 
         check_history_retime
+
+        check_history_seq
+
+        log_error('Removing possibly corrupted records from VM showback '\
+            "please run 'oneshowback calculate` to recalculate "\
+            'the showback') unless @showback_delete.empty?
     end
 
     # Check that etime from non last seq is 0
@@ -92,10 +98,11 @@ module OneDBFsck
                   'FROM history ' \
                   'WHERE etime > 0') do |row|
             history_doc = nokogiri_doc(row[:body], 'history')
+            rstime  = history_doc.root.at_xpath('RSTIME')
             retime  = history_doc.root.at_xpath('RETIME')
             estime  = history_doc.root.at_xpath('ESTIME').text.to_i
 
-            if retime.text.to_i == 0
+            if rstime.text.to_i != 0 && retime.text.to_i == 0
                 log_error("History for VM #{row[:vid]} seq # #{row[:seq]} "\
                     'is closed (etime != 0), but retime = 0')
 
@@ -140,6 +147,26 @@ module OneDBFsck
         end
     end
 
+    def check_history_seq
+        @history_delete = {}
+
+        # Query to select history elements with max seq
+        @db.fetch('SELECT vid, MAX(seq) AS max_seq ' \
+                  'FROM history ' \
+                  'GROUP BY vid') do |row|
+            # Skip iteration if VM doesn't have last seq, it should never happen
+            last_seq = @vms_last_history[row[:vid]]
+            next if last_seq.nil?
+
+            if row[:max_seq] != last_seq
+                log_error("VM #{row[:vid]} history last seq # #{last_seq} "\
+                          "doesn't match last seq in DB # #{row[:max_seq]}")
+
+                @history_delete[row[:vid]] = [last_seq + 1, row[:max_seq]]
+            end
+        end
+    end
+
     # Fix the broken history records
     def fix_history
         # DATA: FIX: update history records with fixed data
@@ -151,11 +178,10 @@ module OneDBFsck
             end
         end
 
-        # DATA: FIX: Remove possibly corrupte showback values
-        unless @showback_delete.empty?
-            log_error('Removing possibly corrupted records from VM showback '\
-                "please run 'oneshowback calculate` to recalculate "\
-                'the showback')
+        @db.transaction do
+            @history_delete.each do |vid, seq|
+                @db[:history].where(:vid => vid, :seq => seq[0]..seq[1]).delete
+            end
         end
 
         @db.transaction do

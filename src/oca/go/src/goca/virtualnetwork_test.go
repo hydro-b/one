@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -82,6 +82,9 @@ func TestVirtualNetwork(t *testing.T) {
 	}
 
 	vnetC := testCtrl.VirtualNetwork(id)
+
+	WaitState(t, vnetC, "READY")
+
 	vnet, err = vnetC.Info(false)
 	if err != nil {
 		t.Error(err)
@@ -162,10 +165,10 @@ func TestVirtualNetworkRecover(t *testing.T) {
 	var err error
 
 	vnTpl := "NAME = vn_invalid_ar\n" +
-			 "BRIDGE = vbr0\n" +
-			 "VN_MAD = dummy\n" +
-			 "NETWORK_ADDRESS = 192.168.0.0\n"+
-			 "AR = [ TYPE = IP4, IP = 192.168.0.1, SIZE = -1 ]\n"
+		"BRIDGE = vbr0\n" +
+		"VN_MAD = dummy\n" +
+		"NETWORK_ADDRESS = 192.168.0.0\n" +
+		"AR = [ TYPE = IP4, IP = 192.168.0.1, SIZE = -1 ]\n"
 
 	id, err := testCtrl.VirtualNetworks().Create(vnTpl, -1)
 	if err != nil {

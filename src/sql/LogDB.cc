@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -367,7 +367,7 @@ int LogDB::apply_log_record(LogDBRecord * lr)
 
     int rc = db->exec_ext(oss_sql);
 
-    if (rc == SqlDB::SUCCESS || rc == SqlDB::SQL_DUP_KEY)
+    if (rc == SqlDB::SUCCESS || rc == SqlDB::SQL_DUP_KEY || rc == SqlDB::SQL)
     {
         std::ostringstream oss;
 
@@ -381,7 +381,14 @@ int LogDB::apply_log_record(LogDBRecord * lr)
 
         last_applied = lr->index;
 
-        rc = 0;
+        if ( rc == SqlDB::SQL )
+        {
+            rc = -1;
+        }
+        else
+        {
+            rc = 0;
+        }
     }
     else
     {

@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -38,7 +38,7 @@ int NebulaTemplate::load_configuration()
 
     if ( rc != 0 && error != 0)
     {
-        cout << "\nError while parsing configuration file:\n" << error << endl;
+        cout << "\nError while parsing configuration file: " << error << endl;
 
         free(error);
 

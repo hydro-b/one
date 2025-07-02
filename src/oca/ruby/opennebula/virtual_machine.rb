@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -295,15 +295,6 @@ module OpenNebula
           'pci-attach',
           'pci-detach',
           'restore'
-        ]
-
-        EXTERNAL_IP_ATTRS = [
-            'GUEST_IP',
-            'AWS_IP_ADDRESS',
-            'AWS_PUBLIC_IP_ADDRESS',
-            'AWS_PRIVATE_IP_ADDRESS',
-            'AZ_IPADDRESS',
-            'SL_PRIMARYIPADDRESS'
         ]
 
         # VirtualMachineDriver constants
@@ -863,8 +854,8 @@ module OpenNebula
         # Generate a backup for the VM (backup config must be set)
         #
         # @param ds_id  [Integer] Id of the datastore to save the backup
-        # @return [Integer, OpenNebula::Error] ID of the resulting BACKUP image
-        # in case of success, Error otherwise.
+        # @return [Integer, OpenNebula::Error] ID of the VM in case of success,
+        #   Error otherwise.
         def backup(ds_id = -1, reset = false)
             @client.call(VM_METHODS[:backup], @pe_id, ds_id, reset)
         end

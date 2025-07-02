@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -16,6 +16,36 @@
 # limitations under the License.                                             #
 #--------------------------------------------------------------------------- #
 
+ONE_LOCATION = ENV['ONE_LOCATION'] unless defined?(ONE_LOCATION)
+
+if !ONE_LOCATION
+    LIB_LOCATION      ||= '/usr/lib/one'
+    RUBY_LIB_LOCATION ||= '/usr/lib/one/ruby'
+    GEMS_LOCATION     ||= '/usr/share/one/gems'
+else
+    LIB_LOCATION      ||= ONE_LOCATION + '/lib'
+    RUBY_LIB_LOCATION ||= ONE_LOCATION + '/lib/ruby'
+    GEMS_LOCATION     ||= ONE_LOCATION + '/share/gems'
+end
+
+# %%RUBYGEMS_SETUP_BEGIN%%
+require 'load_opennebula_paths'
+# %%RUBYGEMS_SETUP_END%%
+
+$LOAD_PATH << RUBY_LIB_LOCATION
+
+require 'rexml/document'
+
 require_relative '../../../lib/linux'
 
-LinuxHost.usage('lxc')
+xml_txt = STDIN.read
+
+host = LinuxHost.usage('lxc')
+
+begin
+    config  = REXML::Document.new(xml_txt).root
+    hostid  = config.elements['HOST_ID'].text.to_s
+
+    host.to_sql(hostid)
+rescue StandardError
+end

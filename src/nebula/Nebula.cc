@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -19,7 +19,6 @@
 #include "VirtualMachine.h"
 #include "SqliteDB.h"
 #include "MySqlDB.h"
-#include "PostgreSqlDB.h"
 #include "Client.h"
 #include "LogDB.h"
 #include "SystemDB.h"
@@ -34,6 +33,7 @@
 #include "ImagePool.h"
 #include "MarketPlacePool.h"
 #include "MarketPlaceAppPool.h"
+#include "PlanPool.h"
 #include "ScheduledActionPool.h"
 #include "SecurityGroupPool.h"
 #include "UserPool.h"
@@ -57,9 +57,11 @@
 #include "IPAMManager.h"
 #include "LifeCycleManager.h"
 #include "MarketPlaceManager.h"
+#include "PlanManager.h"
 #include "RaftManager.h"
 #include "RequestManager.h"
 #include "ScheduledActionManager.h"
+#include "SchedulerManager.h"
 #include "TransferManager.h"
 #include "VirtualMachineManager.h"
 
@@ -87,6 +89,71 @@ using namespace std;
 
 Nebula::~Nebula()
 {
+    // -----------------------------------------------------------
+    // Stop the managers & free resources
+    // -----------------------------------------------------------
+
+    if (rm) rm->finalize();
+
+    if (raftm) raftm->finalize();
+
+    if (!cache)
+    {
+        if (planm) planm->finalize();
+
+        if (sm) sm->finalize();
+
+        if (sam) sam->finalize();
+
+        if (vmm) vmm->finalize();
+        if (lcm) lcm->finalize();
+
+        if (tm) tm->finalize();
+        if (dm) dm->finalize();
+
+        if (im) im->finalize();
+        if (hm) hm->finalize();
+
+        if (imagem) imagem->finalize();
+        if (marketm) marketm->finalize();
+
+        if (ipamm) ipamm->finalize();
+
+        //sleep to wait drivers???
+        if (vmm) vmm->join_thread();
+        if (lcm) lcm->join_thread();
+        if (tm) tm->join_thread();
+        if (dm) dm->join_thread();
+
+        if (hm) hm->join_thread();
+        if (ipamm) ipamm->join_thread();
+    }
+
+    if (aclm) aclm->finalize();
+
+    if (authm)
+    {
+        authm->finalize();
+
+        authm->join_thread();
+    }
+
+    if (is_federation_slave() && aclm)
+    {
+        aclm->join_thread();
+    }
+
+
+    //XML Library
+    xmlCleanupParser();
+
+    ssl_util::SSLMutex::finalize();
+
+    if (NebulaLog::initialized())
+    {
+        NebulaLog::log("ONE", Log::INFO, "All modules finalized, exiting.\n");
+    }
+
     delete vmpool;
     delete vnpool;
     delete hpool;
@@ -120,6 +187,8 @@ Nebula::~Nebula()
     delete raftm;
     delete frm;
     delete sam;
+    delete sm;
+    delete planm;
     delete logdb;
     delete fed_logdb;
     delete system_db;
@@ -127,6 +196,7 @@ Nebula::~Nebula()
     delete hkpool;
     delete bjpool;
     delete sapool;
+    delete plpool;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -424,14 +494,9 @@ void Nebula::start(bool bootstrap_only)
             db_backend = new MySqlDB(server, port, user, passwd, db_name,
                                      encoding, connections, compare_binary);
         }
-        else if ( db_backend_type == "postgresql" )
-        {
-            db_backend = new PostgreSqlDB(server, port, user, passwd, db_name,
-                                          connections);
-        }
         else
         {
-            throw runtime_error("DB BACKEND must be one of sqlite, mysql or postgresql.");
+            throw runtime_error("DB BACKEND must be sqlite or mysql.");
         }
 
         // ---------------------------------------------------------------------
@@ -528,6 +593,7 @@ void Nebula::start(bool bootstrap_only)
             rc += HookLog::bootstrap(logdb);
             rc += BackupJobPool::bootstrap(logdb);
             rc += ScheduledActionPool::bootstrap(logdb);
+            rc += PlanPool::bootstrap(logdb);
 
             // Create the system tables only if bootstrap went well
             if (rc == 0)
@@ -675,6 +741,8 @@ void Nebula::start(bool bootstrap_only)
         nebula_configuration->get("CLUSTER_ENCRYPTED_ATTR", cluster_encrypted_attrs);
 
         vnc_conf = nebula_configuration->get("VNC_PORTS");
+
+        plpool = new PlanPool(logdb);
 
         clpool = new ClusterPool(logdb, vnc_conf, cluster_encrypted_attrs);
 
@@ -1131,6 +1199,57 @@ void Nebula::start(bool bootstrap_only)
         sam = new ScheduledActionManager(timer_period, max_backups, max_backups_host);
     }
 
+    // ---- Scheduler Manager ----
+    if (!cache)
+    {
+        time_t wnd_time;
+        unsigned int wnd_length;
+        time_t retry;
+
+        nebula_configuration->get("SCHED_MAX_WND_TIME", wnd_time);
+        nebula_configuration->get("SCHED_MAX_WND_LENGTH", wnd_length);
+        nebula_configuration->get("SCHED_RETRY_TIME", retry);
+
+        sm = new SchedulerManager(wnd_time, wnd_length, retry, mad_location);
+
+        vector<const VectorAttribute *> sched_mads;
+        nebula_configuration->get("SCHED_MAD", sched_mads);
+
+        if (sm->load_drivers(sched_mads) != 0)
+        {
+            goto error_mad;
+        }
+
+        rc = sm->start();
+
+        if ( rc != 0 )
+        {
+            throw runtime_error("Could not start the Scheduler Manager");
+        }
+    }
+
+    // ---- Plan Manager ----
+    if (!cache)
+    {
+
+        int max_actions_per_host;
+        int max_actions_per_cluster;
+        int live_rescheds;
+        int cold_migrate_mode;
+        int timeout;
+        int drs_interval;
+
+        nebula_configuration->get("MAX_ACTIONS_PER_HOST", max_actions_per_host);
+        nebula_configuration->get("MAX_ACTIONS_PER_CLUSTER", max_actions_per_cluster);
+        nebula_configuration->get("LIVE_RESCHEDS", live_rescheds);
+        nebula_configuration->get("COLD_MIGRATE_MODE", cold_migrate_mode);
+        nebula_configuration->get("ACTION_TIMEOUT", timeout);
+        nebula_configuration->get("DRS_INTERVAL", drs_interval);
+
+        planm = new PlanManager(timer_period, max_actions_per_host, max_actions_per_cluster,
+                                live_rescheds, cold_migrate_mode, timeout, drs_interval);
+    }
+
     // -----------------------------------------------------------
     // Load mads
     // -----------------------------------------------------------
@@ -1207,7 +1326,6 @@ void Nebula::start(bool bootstrap_only)
 
 #ifdef SYSTEMD
     // ---- Notify service manager ----
-
     sd_notify(0, "READY=1");
 #endif
 
@@ -1220,61 +1338,6 @@ void Nebula::start(bool bootstrap_only)
     sigaddset(&mask, SIGTERM);
 
     sigwait(&mask, &signal);
-
-    // -----------------------------------------------------------
-    // Stop the managers & free resources
-    // -----------------------------------------------------------
-
-    rm->finalize();
-
-    raftm->finalize();
-
-    if (!cache)
-    {
-        sam->finalize();
-
-        vmm->finalize();
-        lcm->finalize();
-
-        tm->finalize();
-        dm->finalize();
-
-        im->finalize();
-        hm->finalize();
-
-        imagem->finalize();
-        marketm->finalize();
-
-        ipamm->finalize();
-
-        //sleep to wait drivers???
-        vmm->join_thread();
-        lcm->join_thread();
-        tm->join_thread();
-        dm->join_thread();
-
-        hm->join_thread();
-        ipamm->join_thread();
-    }
-
-    aclm->finalize();
-
-    authm->finalize();
-
-    authm->join_thread();
-
-    if (is_federation_slave())
-    {
-        aclm->join_thread();
-    }
-
-
-    //XML Library
-    xmlCleanupParser();
-
-    ssl_util::SSLMutex::finalize();
-
-    NebulaLog::log("ONE", Log::INFO, "All modules finalized, exiting.\n");
 
     return;
 

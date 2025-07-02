@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -431,7 +431,7 @@ int VMGroup::check_rule_consistency(std::string& error)
         return -1;
     }
 
-    for (auto rule : affined)
+    for (const auto& rule : affined)
     {
         const VMGroupRule::role_bitset rs = rule.get_roles();
 
@@ -551,7 +551,7 @@ int VMGroup::insert(SqlDB *db, string& error_str)
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
-int VMGroup::post_update_template(string& error)
+int VMGroup::post_update_template(string& error, Template *_old_tmpl)
 {
     int vms = _roles.vm_size();
 

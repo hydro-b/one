@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -45,8 +45,8 @@
  *
  */
 template<typename E, //Enum class for the message types
-         bool encode   = false, //Payload is base64 encoded
          bool compress = false, //Payload is compressed
+         bool encode   = false, //Payload is base64 encoded
          bool encrypt  = false, //Payload is encrypted
          bool has_timestamp = false> //Message includes timestamp
 class Message
@@ -235,6 +235,8 @@ int Message<E, compress, encode, encrypt, has_timestamp>
     {
         is >> _timestamp >> std::ws;
     }
+
+    is.clear(); //Clear failbit
 
     getline(is, buffer);
 

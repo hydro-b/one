@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -33,7 +33,7 @@ module OpenNebulaHelper
 
     ONE_VERSION=<<~EOT
         OpenNebula #{OpenNebula::VERSION}
-        Copyright 2002-2023, OpenNebula Project, OpenNebula Systems
+        Copyright 2002-2025, OpenNebula Project, OpenNebula Systems
     EOT
 
     if ONE_LOCATION
@@ -412,31 +412,19 @@ Bash symbols must be escaped on STDIN passing'
             :description => 'Sends READY=YES to OneGate, useful for OneFlow'
         },
         {
-            :name   => 'vcenter_vm_folder',
-            :large  => '--vcenter_vm_folder path',
-            :format => String,
-            :description => 'In a vCenter environment sets the the VMs and Template folder where the VM will be placed in.' \
-            ' The path uses slashes to separate folders. For example: --vcenter_vm_folder "/Management/VMs"'
-        },
-        {
             :name   => 'user_inputs',
             :large  => '--user-inputs ui1,ui2,ui3',
-            :format => Array,
+            :format => String,
             :description => 'Specify the user inputs values when instantiating',
-            :proc => lambda do |o, options|
-                # Store user inputs that has been already processed
-                options[:user_inputs_keys] = []
+            :proc => lambda do |_o, options|
+                keys   = options[:user_inputs].scan(/(?:^|,)([^,=]+)=/).flatten
+                values = options[:user_inputs].scan(/=(.+?)(?=,[^,]+=|$)/).flatten
 
-                # escape values
-                options[:user_inputs].map! do |user_input|
-                    user_input_split = user_input.split('=')
+                options[:user_inputs_keys] = keys
 
-                    options[:user_inputs_keys] << user_input_split[0]
-
-                    "#{user_input_split[0]}=\"#{user_input_split[1]}\""
-                end
-
-                options[:user_inputs] = o.join("\n")
+                options[:user_inputs] = keys.zip(values).map do |k, v|
+                    %[#{k}="#{v}"]
+                end.join("\n")
             end
         },
         {
@@ -1860,15 +1848,13 @@ Bash symbols must be escaped on STDIN passing'
         [0, template]
     end
 
-    def self.create_context(options)
+    def self.create_context_str(options, context_hash)
         context_options = [:ssh, :net_context, :context, :init, :files_ds, :startscript,
                            :report_ready]
         if !(options.keys & context_options).empty?
-            lines=[]
-
             if options[:ssh]
                 if options[:ssh]==true
-                    lines<<'SSH_PUBLIC_KEY="$USER[SSH_PUBLIC_KEY]"'
+                    context_hash['SSH_PUBLIC_KEY'] = "$USER[SSH_PUBLIC_KEY]"
                 else
                     begin
                         key=File.read(options[:ssh]).strip
@@ -1876,28 +1862,22 @@ Bash symbols must be escaped on STDIN passing'
                         STDERR.puts e.message
                         exit(-1)
                     end
-                    lines<<"SSH_PUBLIC_KEY=\"#{key}\""
+                    context_hash['SSH_PUBLIC_KEY'] = key
                 end
             end
 
             if options[:net_context]
-                lines << 'NETWORK = "YES"'
+                context_hash['NETWORK'] = "YES"
             end
 
-            lines+=options[:context] if options[:context]
-
             if options[:files_ds]
-                text='FILES_DS="'
-                text << options[:files_ds].map do |file|
-                    %($FILE[IMAGE=\\"#{file}\\"])
-                end.join(' ')
-                text << '"'
+                files = options[:files_ds].map { |file| %($FILE[IMAGE=\\"#{file}\\"]) }.join(" ")
 
-                lines << text
+                context_hash['FILES_DS'] = files
             end
 
             if options[:init]
-                lines << %(INIT_SCRIPTS="#{options[:init].join(' ')}")
+                context_hash['INIT_SCRIPTS'] = options[:init].join(" ")
             end
 
             if options[:startscript]
@@ -1909,15 +1889,23 @@ Bash symbols must be escaped on STDIN passing'
                     exit(-1)
                 end
                 script = Base64.strict_encode64(script)
-                lines<<"START_SCRIPT_BASE64=\"#{script}\""
+                context_hash['START_SCRIPT_BASE64'] = script
+
             end
 
             if options[:report_ready]
-                lines << 'REPORT_READY = "YES"'
+                context_hash['REPORT_READY'] = "YES"
             end
 
-            if !lines.empty?
-                "CONTEXT=[\n" << lines.map {|l| '  ' << l }.join(",\n") << "\n]\n"
+            if context_hash.any? || options[:context]
+                formatted_context = "CONTEXT=[\n"
+                formatted_context << options[:context].map {|l| ' ' << l }.join(",\n") if options[:context]
+                if context_hash.any?
+                    formatted_context << ",\n" if options[:context]
+                    formatted_context << context_hash.map { |k, v| "  #{k}=\"#{v}\"" }.join(",\n")
+                end
+                formatted_context << "\n]\n"
+                formatted_context
             else
                 nil
             end
@@ -1998,21 +1986,12 @@ Bash symbols must be escaped on STDIN passing'
             template<<' ]' << "\n"
         end
 
-        template<<"VCENTER_VM_FOLDER=#{options[:vcenter_vm_folder]}\n" if options[:vcenter_vm_folder]
-
-        context=create_context(options)
-        template<<context if context
-
-        if options[:userdata] && !template_obj.nil? && template_obj.has_elements?('TEMPLATE/EC2')
-            template_obj.add_element(
-                'TEMPLATE/EC2',
-                'USERDATA' => options[:userdata]
-            )
-
-            template << template_obj.template_like_str(
-                'TEMPLATE', false, 'EC2'
-            )
+        context_hash = {}
+        if !template_obj.nil? && template_obj.has_elements?('TEMPLATE/CONTEXT')
+            context_hash = template_obj.to_hash["VMTEMPLATE"]["TEMPLATE"]["CONTEXT"]
         end
+        context_str=create_context_str(options, context_hash)
+        template<<context_str if context_str
 
         [0, template]
     end
@@ -2106,107 +2085,6 @@ Bash symbols must be escaped on STDIN passing'
         conflicting_opts.replace(options.keys & template_options)
 
         !conflicting_opts.empty?
-    end
-
-    def self.sunstone_url
-        if (one_sunstone = ENV['ONE_SUNSTONE'])
-            one_sunstone
-        elsif (one_xmlrpc = ENV['ONE_XMLRPC'])
-            uri = URI(one_xmlrpc)
-            "#{uri.scheme}://#{uri.host}:9869"
-        else
-            'http://localhost:9869'
-        end
-    end
-
-    def self.download_resource_sunstone(kind, id, path, _force)
-        client = OneHelper.client
-        user, password = client.one_auth.split(':', 2)
-
-        # Step 1: Build Session to get Cookie
-        uri = URI(File.join(sunstone_url, 'login'))
-
-        req = Net::HTTP::Post.new(uri)
-        req.basic_auth user, password
-
-        begin
-            res = Net::HTTP.start(uri.hostname, uri.port) do |http|
-                http.request(req)
-            end
-        rescue StandardError
-            return OpenNebula::Error.new("Error connecting to '#{uri}'.")
-        end
-
-        cookie = res.response['set-cookie'].split('; ')[0]
-
-        if cookie.nil?
-            return OpenNebula::Error.new('Unable to get Cookie. Is OpenNebula running?')
-        end
-
-        # Step 2: Open '/' to get the csrftoken
-        uri = URI(sunstone_url)
-
-        req = Net::HTTP::Get.new(uri)
-        req['Cookie'] = cookie
-
-        begin
-            res = Net::HTTP.start(uri.hostname, uri.port) do |http|
-                http.request(req)
-            end
-        rescue StandardError
-            return OpenNebula::Error.new("Error connecting to '#{uri}'.")
-        end
-
-        m = res.body.match(/var csrftoken = '(.*)';/)
-        csrftoken = m[1] rescue nil
-
-        if csrftoken.nil?
-            return OpenNebula::Error.new('Unable to get csrftoken.')
-        end
-
-        # Step 3: Download resource
-        uri = URI(File.join(sunstone_url,
-                            kind.to_s,
-                            id.to_s,
-                            "download?csrftoken=#{csrftoken}"))
-
-        req = Net::HTTP::Get.new(uri)
-
-        req['Cookie'] = cookie
-        req['User-Agent'] = 'OpenNebula CLI'
-
-        begin
-            File.open(path, 'wb') do |f|
-                Net::HTTP.start(uri.hostname, uri.port) do |http|
-                    http.request(req) do |res|
-                        res.read_body do |chunk|
-                            f.write(chunk)
-                        end
-                    end
-                end
-            end
-        rescue Errno::EACCES
-            return OpenNebula::Error.new('Target file not writable.')
-        end
-
-        error_message = nil
-
-        File.open(path, 'rb') do |f|
-            begin
-                f.seek(-1024, IO::SEEK_END)
-            rescue Errno::EINVAL
-            end
-
-            tail = f.read
-
-            m = tail.match(/@\^_\^@ (.*) @\^_\^@/m)
-            error_message = m[1] if m
-        end
-
-        return unless error_message
-
-        File.unlink(path)
-        OpenNebula::Error.new("Remote server error: #{error_message}")
     end
 
     def self.level_lock_to_str(str)
@@ -2556,7 +2434,12 @@ Bash symbols must be escaped on STDIN passing'
     def self.scheduled_action_table(object)
         CLIHelper::ShowTable.new(nil, object) do
             column :ID, '', :adjust => true do |d|
-                d['ID']
+                warn = d['WARNING'].to_i
+
+                prefix = ''
+                prefix = '*' if d['DONE'].to_i <= 0 && warn != 0 && warn < Time.now.to_i
+
+                prefix + d['ID']
             end
 
             column :ACTION, '', :adjust => true do |d|

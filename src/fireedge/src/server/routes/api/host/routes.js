@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -14,24 +14,48 @@
  * limitations under the License.                                            *
  * ------------------------------------------------------------------------- */
 
-const { httpMethod } = require('../../../utils/constants/defaults')
+const {
+  httpMethod,
+  from: fromData,
+} = require('../../../utils/constants/defaults')
 
-const { GET } = httpMethod
-const basepath = '/hostpool'
+const { GET, POST } = httpMethod
+const { resource, postBody } = fromData
+
+const basepathHostPool = '/hostpool'
+const basepathHost = '/host'
 
 const HOSTPOOL_ADMINSHOW = 'hostpool.adminInfo'
+const HOST_FLUSH = 'host.flush'
 
 const Actions = {
   HOSTPOOL_ADMINSHOW,
+  HOST_FLUSH,
 }
 
 module.exports = {
   Actions,
   Commands: {
     [HOSTPOOL_ADMINSHOW]: {
-      path: `${basepath}/admininfo`,
+      path: `${basepathHostPool}/admininfo`,
       httpMethod: GET,
       auth: true,
+    },
+    [HOST_FLUSH]: {
+      path: `${basepathHost}/flush/:id`,
+      httpMethod: POST,
+      auth: true,
+      params: {
+        id: {
+          from: resource,
+        },
+        destination: {
+          from: postBody,
+        },
+        vms: {
+          from: postBody,
+        },
+      },
     },
   },
 }

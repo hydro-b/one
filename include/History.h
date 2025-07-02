@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -39,7 +39,9 @@ public:
             int cid,
             const std::string& vmm,
             const std::string& tmm,
-            int           ds_id,
+            int ds_id,
+            int plan_id,
+            int action_id,
             const std::string& vm_info);
 
     ~History() {};
@@ -89,6 +91,9 @@ private:
     std::string  tm_mad_name;
 
     int          ds_id;
+
+    int          plan_id   = -2;
+    int          action_id = -1;
 
     time_t       stime;
     time_t       etime;

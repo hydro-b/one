@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -91,38 +91,28 @@ PoolSQL::PoolSQL(SqlDB * _db, const char * _table)
 
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
-
-PoolSQL::~PoolSQL()
-{
-}
-
-/* -------------------------------------------------------------------------- */
-/* -------------------------------------------------------------------------- */
 /* PoolSQL public interface                                                   */
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
-int PoolSQL::allocate(PoolObjectSQL *objsql, string& error_str)
+int PoolSQL::allocate(PoolObjectSQL &objsql, string& error_str)
 {
-    int rc;
-    int lastOID;
-
     lock_guard<mutex> lock(_mutex);
 
-    lastOID = _get_lastOID(db, table);
+    auto lastOID = _get_lastOID(db, table);
 
     if (lastOID == INT_MAX)
     {
         lastOID = -1;
     }
 
-    objsql->oid = ++lastOID;
+    objsql.oid = ++lastOID;
 
     if ( _set_lastOID(lastOID, db, table) == -1 )
     {
         return -1;
     }
 
-    rc = objsql->insert(db, error_str);
+    auto rc = objsql.insert(db, error_str);
 
     if ( rc != 0 )
     {
@@ -132,8 +122,6 @@ int PoolSQL::allocate(PoolObjectSQL *objsql, string& error_str)
     {
         rc = lastOID;
     }
-
-    delete objsql;
 
     if( rc == -1 )
     {
@@ -158,14 +146,8 @@ void PoolSQL::exist(const string& id_str, std::set<int>& id_list)
     std::vector<int> existing_items;
 
     one_util::split_unique(id_str, ',', id_list);
-    if (Nebula::instance().get_db_backend() == "postgresql")
-    {
-        search(existing_items, table.c_str(), "true order by 1 ASC");
-    }
-    else
-    {
-        search(existing_items, table.c_str(), "1 order by 1 ASC");
-    }
+
+    search(existing_items, table.c_str(), "1 order by 1 ASC");
 
     for (auto iterator = id_list.begin(); iterator != id_list.end();)
     {
@@ -352,6 +334,15 @@ void PoolSQL::usr_filter(int                uid,
     else if ( filter_flag == RequestManagerPoolInfoFilter::GROUP )
     {
         uid_filter << "gid = " << gid;
+
+        if ( !all )
+        {
+            uid_filter << " AND ( other_u = 1 OR ( uid = " << uid
+                       << " ) OR ( gid = " << gid << " AND group_u = 1 )";
+
+            uid_filter << acl_str << ")";
+        }
+
     }
     else if ( filter_flag == RequestManagerPoolInfoFilter::MINE_GROUP )
     {

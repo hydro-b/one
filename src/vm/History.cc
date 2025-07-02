@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -62,7 +62,9 @@ History::History(
         int _cid,
         const string& _vmm,
         const string& _tmm,
-        int           _ds_id,
+        int _ds_id,
+        int _plan_id,
+        int _action_id,
         const string& _vm_info):
     oid(_oid),
     seq(_seq),
@@ -75,6 +77,8 @@ History::History(
     vmm_mad_name(_vmm),
     tm_mad_name(_tmm),
     ds_id(_ds_id),
+    plan_id(_plan_id),
+    action_id(_action_id),
     stime(0),
     etime(0),
     prolog_stime(0),
@@ -244,11 +248,6 @@ int History::select(SqlDB * db)
         rc = -1;
     }
 
-    if ( rc == 0 ) // Regenerate non-persistent data
-    {
-        non_persistent_data();
-    }
-
     return rc;
 }
 
@@ -309,6 +308,8 @@ string& History::to_xml(string& xml, bool database) const
         "<VM_MAD>"     << one_util::escape_xml(vmm_mad_name)<<"</VM_MAD>"<<
         "<TM_MAD>"     << one_util::escape_xml(tm_mad_name) <<"</TM_MAD>" <<
         "<DS_ID>"      << ds_id         << "</DS_ID>" <<
+        "<PLAN_ID>"    << plan_id       << "</PLAN_ID>" <<
+        "<ACTION_ID>"  << action_id     << "</ACTION_ID>" <<
         "<PSTIME>"     << prolog_stime  << "</PSTIME>"<<
         "<PETIME>"     << prolog_etime  << "</PETIME>"<<
         "<RSTIME>"     << running_stime << "</RSTIME>"<<
@@ -406,9 +407,13 @@ int History::rebuild_attributes()
 
     rc += xpath(seq, "/HISTORY/SEQ", -1);
     rc += xpath(hid, "/HISTORY/HID", -1);
-    rc += xpath(cid, "/HISTORY/CID", -1);
 
+    rc += xpath(cid, "/HISTORY/CID", -1);
     rc += xpath(ds_id, "/HISTORY/DS_ID", 0);
+
+    // For backward compatibility do not fail if plan or action ID is not found
+    xpath(plan_id, "/HISTORY/PLAN_ID", -2);
+    xpath(action_id, "/HISTORY/ACTION_ID", -1);
 
     rc += xpath(hostname, "/HISTORY/HOSTNAME", "not_found");
 

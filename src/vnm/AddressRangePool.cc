@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -112,7 +112,7 @@ int AddressRangePool::add_ar(AddressRange * ar)
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
-int AddressRangePool::update_ar(vector<VectorAttribute *> ars, bool keep_restricted,
+int AddressRangePool::update_ar(const vector<VectorAttribute *>& ars, bool keep_restricted,
                                 std::set<int>& update_ids, std::unique_ptr<VectorAttribute>& update_attr,
                                 string& error_msg)
 {

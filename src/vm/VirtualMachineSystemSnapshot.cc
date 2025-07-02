@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -99,7 +99,7 @@ VectorAttribute* VirtualMachine::new_snapshot(string& name, int& snap_id)
 /* -------------------------------------------------------------------------- */
 
 int set_active_snapshot(int snap_id, const string& action,
-                        vector<VectorAttribute *>& snaps)
+                        const vector<VectorAttribute *>& snaps)
 {
     int s_id;
 
@@ -264,6 +264,11 @@ void VirtualMachine::delete_snapshots(Template& snapshots)
     obj_template->remove("SNAPSHOT", attrs);
 
     snapshots.set(attrs);
+
+    if (hasHistory())
+    {
+        snapshots.replace("CLUSTER_ID", get_cid());
+    }
 }
 
 /* -------------------------------------------------------------------------- */

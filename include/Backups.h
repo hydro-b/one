@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -131,11 +131,12 @@ public:
      *     - INCREMENTAL_BACKUP_ID
      * @param tmpl Template to parse, the root element must be BACKUP_CONFIG
      * @param can_increment VM disks support incremental backup
+     * @param can_keep_last_increment VM disks support KEEP_LAST for INCREMENT mode
      * @param append Only append new values from tmpl
      * @param error_str Returns the error reason, if any
      * @return 0 success, -1 error
      */
-    int parse(Template *tmpl, bool can_increment,
+    int parse(Template *tmpl, bool can_increment, bool can_keep_last_increment,
               bool append, std::string& error_str);
 
     /**
@@ -173,6 +174,11 @@ public:
     void last_backup_size(const std::string& size)
     {
         config.replace("LAST_BACKUP_SIZE", size);
+    }
+
+    void last_backup_format(const std::string& format)
+    {
+        config.replace("LAST_BACKUP_FORMAT", format);
     }
 
     void last_increment_id(int id)
@@ -222,6 +228,15 @@ public:
         config.get("LAST_BACKUP_SIZE", sz);
 
         return sz;
+    }
+
+    std::string last_backup_format() const
+    {
+        std::string fmt;
+
+        config.get("LAST_BACKUP_FORMAT", fmt);
+
+        return fmt;
     }
 
     int last_increment_id() const
@@ -283,6 +298,8 @@ public:
 
         config.erase("LAST_BACKUP_ID");
         config.erase("LAST_BACKUP_SIZE");
+
+        config.erase("LAST_BACKUP_FORMAT");
     }
 
     /**

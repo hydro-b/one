@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -30,7 +30,6 @@ const {
   createHash,
 } = require('crypto')
 const {
-  existsSync,
   readFileSync,
   createWriteStream,
   readdirSync,
@@ -56,31 +55,27 @@ const {
   defaultConfigFile,
   defaultLogFilename,
   defaultLogPath,
-  defaultSharePath,
   defaultSystemPath,
   defaultSourceSystemPath,
-  defaultVmrcTokens,
   defaultVarPath,
   defaultKeyFilename,
   defaultSunstoneAuth,
   defaultWebpackMode,
   defaultEtcPath,
+  defaultLabelsFilename,
   defaultTypeCrypto,
   defaultHash,
   defaultSunstonePath,
   defaultSunstoneViews,
   defaultSunstoneConfig,
-  defaultProvisionPath,
-  defaultProvisionConfig,
   defaultDownloader,
   defaultEmptyFunction,
+  defaultTabManifestFilename,
+  defaultRemoteModulesConfigFilename,
 } = defaults
 
 const { internalServerError } = httpCodes
 const { POST } = httpMethod
-
-let cert = ''
-let key = ''
 
 /**
  * Sets the default DNS lookup order to prefer IPv4 addresses first
@@ -96,37 +91,6 @@ const setDnsResultOrder = () => {
 }
 
 setDnsResultOrder()
-
-/**
- * Validate if server app have certs.
- *
- * @returns {boolean} file certs
- */
-const validateServerIsSecure = () => {
-  const folder = 'cert/'
-  const dirCerts =
-    env && env.NODE_ENV === defaultWebpackMode
-      ? ['../', '../', '../', folder]
-      : ['../', folder]
-  const pathfile = resolve(__dirname, ...dirCerts)
-  cert = `${pathfile}/cert.pem`
-  key = `${pathfile}/key.pem`
-
-  return existsSync && key && cert && existsSync(key) && existsSync(cert)
-}
-/**
- * Get certificate SSL.
- *
- * @returns {string} ssl path
- */
-const getCert = () => cert
-
-/**
- * Get key of certificate SSL.
- *
- * @returns {string} key ssl path
- */
-const getKey = () => key
 
 /**
  * Validate the route http method.
@@ -269,7 +233,7 @@ const middlewareValidateAuthWebsocket = (
  */
 const encrypt = (data = '', encryptKey = '', iv = '') => {
   let rtn
-  if (data && encryptKey && iv) {
+  if (data && encryptKey) {
     try {
       const cipher = iv
         ? createCipheriv(defaultTypeCrypto, encryptKey, iv)
@@ -301,7 +265,7 @@ const encrypt = (data = '', encryptKey = '', iv = '') => {
  */
 const decrypt = (data = '', decryptKey = '', iv = '') => {
   let rtn
-  if (data && decryptKey && iv) {
+  if (data && decryptKey) {
     try {
       const cipher = iv
         ? createDecipheriv(defaultTypeCrypto, decryptKey, iv)
@@ -570,17 +534,20 @@ const genPathResources = () => {
 
   const ONE_LOCATION = env && env.ONE_LOCATION
   const LOG_LOCATION = !ONE_LOCATION ? defaultLogPath : `${ONE_LOCATION}/var`
-  const SHARE_LOCATION = !ONE_LOCATION
-    ? defaultSharePath
-    : `${ONE_LOCATION}/share`
   const SYSTEM_LOCATION =
-    (devMode && resolve(__dirname, '../../client')) ||
+    (devMode && resolve(__dirname, '..', '..', 'client')) ||
     (!ONE_LOCATION
       ? resolve(defaultSystemPath)
-      : resolve(`${ONE_LOCATION}${defaultSourceSystemPath}`))
+      : resolve(`${ONE_LOCATION}`, `${defaultSourceSystemPath}`))
   const VAR_LOCATION = !ONE_LOCATION ? defaultVarPath : `${ONE_LOCATION}/var`
   const ETC_LOCATION = !ONE_LOCATION ? defaultEtcPath : `${ONE_LOCATION}/etc`
-  const VMRC_LOCATION = !ONE_LOCATION ? defaultVarPath : ONE_LOCATION
+  const ETC_VIEWS_LOCATION =
+    (devMode &&
+      resolve(__dirname, '..', '..', '..', 'etc', 'sunstone', 'views')) ||
+    `${ETC_LOCATION}/${defaultSunstonePath}/views`
+  const MODULES_LOCATION =
+    (devMode && resolve(__dirname, '..', '..', '..', 'etc', 'sunstone')) ||
+    `${ETC_LOCATION}/${defaultSunstonePath}`
 
   if (global) {
     if (!global.paths) {
@@ -588,9 +555,6 @@ const genPathResources = () => {
     }
     if (!global.paths.FIREEDGE_CONFIG) {
       global.paths.FIREEDGE_CONFIG = `${ETC_LOCATION}/${defaultConfigFile}`
-    }
-    if (!global.paths.VMRC_TOKENS) {
-      global.paths.VMRC_TOKENS = `${VMRC_LOCATION}/${defaultVmrcTokens}`
     }
     if (!global.paths.FIREEDGE_LOG) {
       global.paths.FIREEDGE_LOG = `${LOG_LOCATION}/${defaultLogFilename}`
@@ -605,7 +569,7 @@ const genPathResources = () => {
       global.paths.SUNSTONE_AUTH_PATH = `${VAR_LOCATION}/.one/${defaultSunstoneAuth}`
     }
     if (!global.paths.SUNSTONE_PATH) {
-      global.paths.SUNSTONE_PATH = `${ETC_LOCATION}/${defaultSunstonePath}/`
+      global.paths.SUNSTONE_PATH = `${ETC_VIEWS_LOCATION}/`
     }
     if (!global.paths.SUNSTONE_CONFIG) {
       global.paths.SUNSTONE_CONFIG = `${ETC_LOCATION}/${defaultSunstonePath}/${defaultSunstoneConfig}`
@@ -614,7 +578,25 @@ const genPathResources = () => {
       global.paths.SUNSTONE_IMAGES = `${SYSTEM_LOCATION}/assets/images/logos`
     }
     if (!global.paths.SUNSTONE_VIEWS) {
-      global.paths.SUNSTONE_VIEWS = `${ETC_LOCATION}/${defaultSunstonePath}/${defaultSunstoneViews}`
+      global.paths.SUNSTONE_VIEWS = `${ETC_VIEWS_LOCATION}/${defaultSunstoneViews}`
+    }
+    if (!global.paths.DEFAULT_LABELS_CONFIG) {
+      global.paths.DEFAULT_LABELS_CONFIG = `${ETC_LOCATION}/${defaultSunstonePath}/${defaultLabelsFilename}`
+    }
+    if (!global.paths.VMM_EXEC_CONFIG) {
+      global.paths.VMM_EXEC_CONFIG = `${ETC_LOCATION}/vmm_exec`
+    }
+    if (!global.paths.REMOTES_IM_PATH) {
+      global.paths.REMOTES_IM_PATH = `${VAR_LOCATION}/remotes/etc/im/`
+    }
+    if (!global.paths.OS_PROFILES) {
+      global.paths.OS_PROFILES = `${MODULES_LOCATION}/profiles`
+    }
+    if (!global.paths.TAB_MANIFEST_CONFIG) {
+      global.paths.TAB_MANIFEST_CONFIG = `${MODULES_LOCATION}/${defaultTabManifestFilename}`
+    }
+    if (!global.paths.REMOTE_MODULES_CONFIG) {
+      global.paths.REMOTE_MODULES_CONFIG = `${MODULES_LOCATION}/${defaultRemoteModulesConfigFilename}`
     }
     if (!global.paths.FIREEDGE_KEY_PATH) {
       global.paths.FIREEDGE_KEY_PATH = `${VAR_LOCATION}/.one/${defaultKeyFilename}`
@@ -622,17 +604,8 @@ const genPathResources = () => {
     if (!global.paths.CPI) {
       global.paths.CPI = `${VAR_LOCATION}/${defaultAppName}`
     }
-    if (!global.paths.PROVISION_PATH) {
-      global.paths.PROVISION_PATH = `${ETC_LOCATION}/${defaultProvisionPath}/`
-    }
-    if (!global.paths.PROVISION_CONFIG) {
-      global.paths.PROVISION_CONFIG = `${ETC_LOCATION}/${defaultProvisionPath}/${defaultProvisionConfig}`
-    }
     if (!global.paths.ETC_CPI) {
       global.paths.ETC_CPI = `${ETC_LOCATION}/${defaultAppName}`
-    }
-    if (!global.paths.SHARE_CPI) {
-      global.paths.SHARE_CPI = `${SHARE_LOCATION}/oneprovision/edge-clusters`
     }
   }
 }
@@ -809,7 +782,7 @@ const parsePostData = (postData = {}) => {
   const rtn = {}
   Object.entries(postData).forEach(([postKey, value]) => {
     try {
-      rtn[postKey] = JSON.parse(value, (k, val) => {
+      rtn[postKey] = JSON.parse(value, (_k, val) => {
         try {
           return JSON.parse(val)
         } catch (error) {
@@ -1042,11 +1015,8 @@ module.exports = {
   replaceEscapeSequence,
   createFile,
   httpResponse,
-  validateServerIsSecure,
   genPathResources,
   genFireedgeKey,
-  getCert,
-  getKey,
   parsePostData,
   getRequestFiles,
   getRequestParameters,

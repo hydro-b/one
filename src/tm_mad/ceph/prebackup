@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -15,38 +15,21 @@
 # See the License for the specific language governing permissions and        #
 # limitations under the License.                                             #
 #--------------------------------------------------------------------------- #
-ONE_LOCATION = ENV['ONE_LOCATION']
+
+ONE_LOCATION = ENV['ONE_LOCATION'] unless defined?(ONE_LOCATION)
 
 if !ONE_LOCATION
-    RUBY_LIB_LOCATION = '/usr/lib/one/ruby'
-    GEMS_LOCATION     = '/usr/share/one/gems'
-    VMDIR             = '/var/lib/one'
-    CONFIG_FILE       = '/var/lib/one/config'
+    LIB_LOCATION      ||= '/usr/lib/one'
+    RUBY_LIB_LOCATION ||= '/usr/lib/one/ruby'
+    GEMS_LOCATION     ||= '/usr/share/one/gems'
 else
-    RUBY_LIB_LOCATION = ONE_LOCATION + '/lib/ruby'
-    GEMS_LOCATION     = ONE_LOCATION + '/share/gems'
-    VMDIR             = ONE_LOCATION + '/var'
-    CONFIG_FILE       = ONE_LOCATION + '/var/config'
+    LIB_LOCATION      ||= ONE_LOCATION + '/lib'
+    RUBY_LIB_LOCATION ||= ONE_LOCATION + '/lib/ruby'
+    GEMS_LOCATION     ||= ONE_LOCATION + '/share/gems'
 end
 
 # %%RUBYGEMS_SETUP_BEGIN%%
-if File.directory?(GEMS_LOCATION)
-    real_gems_path = File.realpath(GEMS_LOCATION)
-    if !defined?(Gem) || Gem.path != [real_gems_path]
-        $LOAD_PATH.reject! {|l| l =~ /vendor_ruby/ }
-
-        # Suppress warnings from Rubygems
-        # https://github.com/OpenNebula/one/issues/5379
-        begin
-            verb = $VERBOSE
-            $VERBOSE = nil
-            require 'rubygems'
-            Gem.use_paths(real_gems_path)
-        ensure
-            $VERBOSE = verb
-        end
-    end
-end
+require 'load_opennebula_paths'
 # %%RUBYGEMS_SETUP_END%%
 
 $LOAD_PATH << RUBY_LIB_LOCATION
@@ -54,18 +37,7 @@ $LOAD_PATH << RUBY_LIB_LOCATION
 require 'rexml/document'
 
 require_relative '../lib/tm_action'
-require_relative '../lib/kvm'
-require_relative '../lib/datastore'
-
-#-------------------------------------------------------------------------------
-# Helper functions
-#-------------------------------------------------------------------------------
-def rbd_append(str, disk, name, opt)
-    opt_val = disk.elements[name].text
-    "#{str} #{opt} #{opt_val}" unless opt_val.empty?
-rescue StandardError
-    str
-end
+require_relative '../lib/ceph'
 
 #-------------------------------------------------------------------------------
 # BACKUP tm_mad host:remote_dir DISK_ID:...:DISK_ID deploy_id bjid vmid dsid
@@ -84,81 +56,25 @@ _dsid     = ARGV[5]
 rhost     = dir[0]
 rdir      = dir[1]
 
-xml_doc = REXML::Document.new(vm_xml)
-vm      = xml_doc.root
-
-ds = TransferManager::Datastore.from_vm_backup_ds(:vm_xml => vm_xml)
-
 base_path = ENV['BACKUP_BASE_PATH']
 
-bck_dir = if base_path
-              "#{base_path}/#{vmid}/backup"
-          else
-              "#{rdir}/backup"
-          end
+backup_dir =
+    if base_path
+        "#{base_path}/#{vmid}/backup"
+    else
+        "#{rdir}/backup"
+    end
 
-expo_cmd = ''
-conv_cmd = ''
-clup_cmd = ''
+action   = TransferManager::Action.new(:action_name => 'prebackup',
+                                       :vm_id => vmid)
+ds       = TransferManager::Datastore.from_vm_backup_ds(:vm_xml => vm_xml.to_s)
+vm       = TransferManager::Ceph::VM.new(action.vm.to_xml)
+script   = vm.backup_disks_sh(disks, backup_dir, ds, false)
 
-vm.elements.each 'TEMPLATE/DISK' do |d|
-    did = d.elements['DISK_ID'].text
-    next unless disks.include? did
-
-    src  = d.elements['SOURCE'].text
-    clon = d.elements['CLONE'].text
-
-    rbd_src = if clon == 'NO'
-                  src
-              else
-                  "#{src}-#{vmid}-#{did}"
-              end
-
-    cmd = rbd_append('rbd', d, 'CEPH_USER', '--id')
-    cmd = rbd_append(cmd, d, 'CEPH_KEY', '--keyfile')
-    cmd = rbd_append(cmd, d, 'CEPH_CONF', '--conf')
-
-    draw = "#{bck_dir}/disk.#{did}.raw"
-    ddst = "#{bck_dir}/disk.#{did}.0"
-
-    ceph_cmd = "#{cmd} export #{rbd_src} #{draw}\n"
-    expo_cmd << ds.cmd_confinement(ceph_cmd, rdir)
-
-    qemu_cmd = "qemu-img convert -m 4 -O qcow2 #{draw} #{ddst}\n"
-    conv_cmd << ds.cmd_confinement(qemu_cmd, rdir)
-
-    clup_cmd << "rm -f #{draw}\n"
-rescue StandardError => e
-    STDERR.puts "Missing configuration attributes in DISK: #{e.message}"
-    exit(1)
-end
-
-script = <<~EOS
-    set -ex -o pipefail
-
-    # ----------------------
-    # Prepare backup folder
-    # ----------------------
-    [ -d #{bck_dir} ] && rm -rf #{bck_dir}
-
-    mkdir -p #{bck_dir}
-
-    echo "#{Base64.encode64(vm_xml)}" > #{bck_dir}/vm.xml
-
-    # --------------------------
-    # export, convert & cleanup
-    # --------------------------
-    #{expo_cmd}
-
-    #{conv_cmd}
-
-    #{clup_cmd}
-EOS
-
-rc = TransferManager::Action.ssh('prebackup_live', :host => rhost,
-                                 :cmds => script,
-                                 :nostdout => false,
-                                 :nostderr => false)
+rc = action.ssh(:host => rhost,
+                :cmds => script,
+                :nostdout => false,
+                :nostderr => false)
 
 if rc.code != 0
     STDERR.puts "Error preparing disk files: #{rc.stdout} #{rc.stderr}"

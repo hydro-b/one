@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -195,6 +195,8 @@ EOT
         aug.context = "/files/#{work_file_name}"
         aug.load
 
+        @zone_id = aug.get('FEDERATION/ZONE_ID').to_i
+
         @generic_quotas = []
 
         i = 0
@@ -302,7 +304,7 @@ EOT
         end
     end
 
-    def fsck
+    def fsck(dry = false)
         # ----------------------------------------------------------------------
         # Read existing UIDs and GIDs
         # ----------------------------------------------------------------------
@@ -328,7 +330,7 @@ EOT
 
         check_pool_control
 
-        fix_pool_control
+        fix_pool_control unless dry
 
         log_time()
 
@@ -345,12 +347,12 @@ EOT
         ########################################################################
 
         check_user
-        fix_user
+        fix_user unless dry
 
         log_time
 
         check_group
-        fix_group
+        fix_group unless dry
 
         log_time
 
@@ -381,25 +383,25 @@ EOT
         init_cluster
 
         check_host_cluster
-        fix_host_cluster
+        fix_host_cluster unless dry
 
         log_time
 
         check_datastore_cluster
-        fix_datastore_cluster
+        fix_datastore_cluster unless dry
 
         log_time
 
         check_network_cluster
-        fix_network_cluster
+        fix_network_cluster unless dry
 
         log_time
 
-        check_fix_cluster
+        check_cluster
+        fix_cluster unless dry
 
-        log_time
-
-        check_fix_cluster_relations
+        check_cluster_relations
+        fix_cluster_relations unless dry
 
         log_time
 
@@ -419,11 +421,12 @@ EOT
         log_time
 
         check_datastore_image
-        fix_datastore_image
+        fix_datastore_image unless dry
 
         log_time
 
-        check_fix_datastore
+        check_datastore
+        fix_datastore unless dry
 
         log_time
 
@@ -448,7 +451,7 @@ EOT
         log_time
 
         check_vm
-        fix_vm
+        fix_vm unless dry
 
         log_time
 
@@ -458,14 +461,14 @@ EOT
         # DATA: VNC Bitmap
 
         check_cluster_vnc_bitmap
-        fix_cluster_vnc_bitmap
+        fix_cluster_vnc_bitmap unless dry
 
         log_time
 
         # history
 
         check_history
-        fix_history
+        fix_history unless dry
 
         log_time
 
@@ -476,7 +479,7 @@ EOT
         ########################################################################
 
         check_vrouter
-        fix_vrouter
+        fix_vrouter unless dry
 
         log_time
 
@@ -490,7 +493,7 @@ EOT
         ########################################################################
 
         check_host
-        fix_host
+        fix_host unless dry
 
         log_time
 
@@ -508,13 +511,13 @@ EOT
 
         check_marketplaceapp
 
-        fix_marketplaceapp
+        fix_marketplaceapp unless dry
 
         log_time()
 
         check_marketplace
 
-        fix_marketplace
+        fix_marketplace unless dry
 
         log_time()
 
@@ -535,7 +538,7 @@ EOT
 
         check_image
 
-        fix_image
+        fix_image unless dry
 
         log_time
 
@@ -548,7 +551,7 @@ EOT
         init_network_lease_counters
 
         check_network
-        fix_network
+        fix_network unless dry
 
         log_time
 
@@ -558,9 +561,11 @@ EOT
         # USER QUOTAS
         ########################################################################
 
-        check_fix_quotas('user')
+        @fix_quotas = {}
 
-        check_fix_quotas('user', 'running')
+        check_quotas('user')
+
+        fix_quotas('user') unless dry
 
         log_time
         ########################################################################
@@ -569,9 +574,9 @@ EOT
         # GROUP QUOTAS
         ########################################################################
 
-        check_fix_quotas('group')
+        check_quotas('group')
 
-        check_fix_quotas('group', 'running')
+        fix_quotas('group') unless dry
 
         log_time
 
@@ -583,7 +588,7 @@ EOT
 
         check_template
 
-        fix_template
+        fix_template unless dry
 
         log_time
 
@@ -593,12 +598,12 @@ EOT
 
         check_scheduled_actions
 
-        fix_scheduled_actions
+        fix_scheduled_actions unless dry
 
         log_time
 
         # Log results
-        log_total_errors
+        log_total_errors(dry)
 
         return true
     end
@@ -628,11 +633,17 @@ EOT
         @log_file.flush
     end
 
-    def log_total_errors()
+    def log_total_errors(dry)
         puts
         log_msg "Total errors found: #{@errors}"
-        log_msg "Total errors repaired: #{@repaired_errors}"
-        log_msg "Total errors unrepaired: #{@unrepaired_errors}"
+        if dry
+            log_msg "Total repairable errors: #{@repaired_errors}"
+            log_msg "Total unrepairable errors: #{@unrepaired_errors}"
+            log_msg "Dry run, no changes have been written to the DB"
+        else
+            log_msg "Total errors repaired: #{@repaired_errors}"
+            log_msg "Total errors unrepaired: #{@unrepaired_errors}"
+        end
 
         puts "A copy of this output was stored in #{LOG}"
     end

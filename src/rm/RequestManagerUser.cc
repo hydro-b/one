@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -74,7 +74,7 @@ int UserChangePassword::user_action(int     user_id,
 
     if (!allowed && !att.is_admin())
     {
-        error_str = "Password for driver " + user->get_auth_driver() +
+        error_str = "Password for driver " + driver +
                     " cannot be changed.";
         return -1;
     }
@@ -160,6 +160,14 @@ int UserSetQuota::user_action(int     user_id,
         return -1;
     }
 
+    vector<VectorAttribute*> vm_quotas;
+    quota_tmpl.get("VM", vm_quotas);
+
+    for (auto* va : vm_quotas)
+    {
+        va->replace("UID", user_id);
+    }
+
     auto upool = static_cast<UserPool *>(pool);
     auto user = upool->get(user_id);
 
@@ -170,7 +178,10 @@ int UserSetQuota::user_action(int     user_id,
 
     rc = user->quota.set(&quota_tmpl, error_str);
 
-    upool->update_quotas(user.get());
+    if ( rc == 0 )
+    {
+        upool->update_quotas(user.get());
+    }
 
     return rc;
 }

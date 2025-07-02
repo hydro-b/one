@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -166,4 +166,15 @@ const EString<HookManagerMessages> hook_msg_t::_type_str(
     {"EXECUTE", HookManagerMessages::EXECUTE},
     {"RETRY", HookManagerMessages::RETRY},
     {"LOG", HookManagerMessages::LOG},
+});
+
+template<>
+const EString<SchedulerManagerMessages> scheduler_msg_t::_type_str(
+{
+    {"UNDEFINED", SchedulerManagerMessages::UNDEFINED},
+    {"INIT", SchedulerManagerMessages::INIT},
+    {"FINALIZE", SchedulerManagerMessages::FINALIZE},
+    {"PLACE", SchedulerManagerMessages::PLACE},
+    {"OPTIMIZE", SchedulerManagerMessages::OPTIMIZE},
+    {"LOG", SchedulerManagerMessages::LOG},
 });

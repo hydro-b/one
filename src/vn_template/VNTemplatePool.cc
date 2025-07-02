@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -35,49 +35,40 @@ int VNTemplatePool::allocate (
         int *                    oid,
         string&                  error_str)
 {
-    int     db_oid;
-    string  name;
-
-    ostringstream oss;
-
     // ------------------------------------------------------------------------
     // Build a new VNTemplate object
     // ------------------------------------------------------------------------
-    auto vn_template = new VNTemplate(-1, uid, gid, uname, gname, umask,
-                                      move(template_contents));
+    VNTemplate vn_template = {-1, uid, gid, uname, gname, umask, move(template_contents)};
 
     // Check name
-    vn_template->get_template_attribute("NAME", name);
+    string name;
+    vn_template.get_template_attribute("NAME", name);
+
+    *oid = -1;
 
     if ( !PoolObjectSQL::name_is_valid(name, error_str) )
     {
-        goto error_name;
+        return *oid;
     }
 
     // Check for duplicates
-    db_oid = exist(name, uid);
+    const auto db_oid = exist(name, uid);
 
     if( db_oid != -1 )
     {
-        goto error_duplicated;
+        ostringstream oss;
+
+        oss << "NAME is already taken by VN TEMPLATE " << db_oid << ".";
+        error_str = oss.str();
+
+        return *oid;
     }
 
     // ------------------------------------------------------------------------
     // Insert the Object in the pool
     // ------------------------------------------------------------------------
 
-    *oid = PoolSQL::allocate(move(vn_template), error_str);
-
-    return *oid;
-
-
-error_duplicated:
-    oss << "NAME is already taken by VN TEMPLATE " << db_oid << ".";
-    error_str = oss.str();
-
-error_name:
-    delete vn_template;
-    *oid = -1;
+    *oid = PoolSQL::allocate(vn_template, error_str);
 
     return *oid;
 }

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -87,30 +87,8 @@ class OneDB
                 :db_name => ops[:db_name],
                 :encoding=> ops[:encoding]
             )
-        elsif ops[:backend] == :postgresql
-            begin
-                require 'pg'
-            rescue
-                STDERR.puts "Ruby gem pg is needed for this operation:"
-                STDERR.puts "   $ sudo gem install pg"
-                exit -1
-            end
-
-            passwd     = ops[:passwd]
-            passwd     = ENV['ONE_DB_PASSWORD'] unless passwd
-            passwd     = get_password("PostgreSQL Password: ") unless passwd
-            ops[:port] = 5432 if ops[:port] == 0
-
-            @backend = BackEndPostgreSQL.new(
-                :server  => ops[:server],
-                :port    => ops[:port],
-                :user    => ops[:user],
-                :passwd  => passwd,
-                :db_name => ops[:db_name],
-                :encoding=> ops[:encoding]
-            )
         else
-            raise "You need to specify the SQLite, MySQL or PostgreSQL connection options."
+            raise "DB BACKEND must be sqlite or mysql."
         end
     end
 
@@ -359,8 +337,11 @@ class OneDB
                         'obtained separately.'
 
             puts
-            puts 'The database will be restored'
-            restore(ops[:backup], :force => true)
+
+            if !ops.include?(:no_backup)
+                puts 'The database will be restored'
+                restore(ops[:backup], :force => true)
+            end
 
             -1
         rescue Exception => e
@@ -462,7 +443,7 @@ class OneDB
 
         if File.exist? file
 
-            one_not_running()
+            one_not_running() if ops[:dry].nil?
 
             load(file)
             @backend.extend OneDBFsck
@@ -472,7 +453,7 @@ class OneDB
             ops[:backup] = @backend.bck_file if ops[:backup].nil?
 
             # FSCK will be executed, make DB backup
-            backup(ops[:backup], ops)
+            backup(ops[:backup], ops) if ops[:dry].nil?
 
             begin
                 puts "  > Running fsck" if ops[:verbose]
@@ -481,7 +462,7 @@ class OneDB
 
                 @backend.read_config
 
-                result = @backend.fsck
+                result = @backend.fsck(ops[:dry] || false)
 
                 if !result
                     raise "Error running fsck version #{ret[:version]}"
@@ -506,7 +487,7 @@ class OneDB
 
                 ops[:force] = true
 
-                restore(ops[:backup], ops)
+                restore(ops[:backup], ops) if ops[:dry].nil?
 
                 return -1
             end
@@ -611,102 +592,6 @@ class OneDB
         @backend.convert(sqlite.backend.db)
 
         return 0
-    end
-
-    def vcenter_one54(ops)
-        @backend.read_db_version
-
-        file = "#{RUBY_LIB_LOCATION}/onedb/vcenter_one54.rb"
-
-        if File.exist? file
-            load(file)
-            @backend.extend One54Vcenter
-
-            one_not_running()
-
-            ops[:backup] = @backend.bck_file if ops[:backup].nil?
-
-            # Migrator will be executed, make DB backup
-            backup(ops[:backup], ops)
-
-            begin
-                time0 = Time.now
-
-                puts "  > Migrating templates" if ops[:verbose]
-
-                result = @backend.migrate_templates(ops[:verbose])
-
-                if !result
-                    raise "The migrator script didn't succeed"
-                end
-
-                puts "  > Migrating VMs" if ops[:verbose]
-
-                result = @backend.migrate_vms(ops[:verbose])
-
-                if !result
-                    raise "The migrator script didn't succeed"
-                end
-
-                puts "  > Migrating hosts" if ops[:verbose]
-
-                result = @backend.migrate_hosts(ops[:verbose])
-
-                if !result
-                    raise "The migrator script didn't succeed"
-                end
-
-                puts "  > Migrating datastores" if ops[:verbose]
-
-                result = @backend.migrate_datastores(ops[:verbose])
-
-                if !result
-                    raise "The migrator script didn't succeed"
-                end
-
-                puts "  > Migrating vnets" if ops[:verbose]
-
-                result = @backend.migrate_vnets(ops[:verbose])
-
-                if !result
-                    raise "The migrator script didn't succeed"
-                end
-
-                puts "  > Migrating images" if ops[:verbose]
-
-                result = @backend.migrate_images(ops[:verbose])
-
-                if !result
-                    raise "The migrator script didn't succeed"
-                end
-
-                puts "  > Done" if ops[:verbose]
-                puts "" if ops[:verbose]
-
-                time1 = Time.now
-
-                puts "  > Total time: #{"%0.02f" % (time1 - time0).to_s}s" if ops[:verbose]
-
-                return 0
-
-            rescue Exception => e
-                puts
-                puts e.message
-                puts e.backtrace.join("\n")
-                puts
-
-                puts "Error running migrator to OpenNebula 5.4 for vcenter"
-                puts "The database will be restored"
-
-                ops[:force] = true
-
-                restore(ops[:backup], ops)
-
-                return -1
-            end
-        else
-            raise "No vcenter_one54 file found in #{RUBY_LIB_LOCATION}/onedb/vcenter_one54.rb"
-        end
     end
 
     private

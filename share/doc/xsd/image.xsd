@@ -39,6 +39,7 @@
         <xs:element name="DISK_TYPE" type="xs:integer"/>
         <xs:element name="PERSISTENT" type="xs:integer"/>
         <xs:element name="REGTIME" type="xs:integer"/>
+        <xs:element name="MODTIME" type="xs:integer"/>
         <xs:element name="SOURCE" type="xs:string"/>
         <xs:element name="PATH" type="xs:string"/>
         <xs:element name="FORMAT" type="xs:string"/>
@@ -73,7 +74,6 @@
           <xs:complexType>
             <xs:sequence>
               <xs:any minOccurs="0" maxOccurs="unbounded" processContents="skip"/>
-              <xs:element name="VCENTER_IMPORTED" type="xs:string" minOccurs="0" maxOccurs="1"/>
               <xs:any minOccurs="0" maxOccurs="unbounded" processContents="skip"/>
             </xs:sequence>
           </xs:complexType>

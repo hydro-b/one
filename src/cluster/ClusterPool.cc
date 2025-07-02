@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -19,6 +19,7 @@
 #include "NebulaLog.h"
 #include "ClusterTemplate.h"
 #include "DatastorePool.h"
+#include "Plan.h"
 
 #include <stdexcept>
 
@@ -96,43 +97,34 @@ error_bootstrap:
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
-int ClusterPool::allocate(string name, int * oid, string& error_str)
+int ClusterPool::allocate(const string& name, int * oid, string& error_str)
 {
-    Cluster * cluster;
-
-    ostringstream oss;
-
-    int db_oid;
+    *oid = -1;
 
     // Check name
     if ( !PoolObjectSQL::name_is_valid(name, error_str) )
     {
-        goto error_name;
+        return *oid;
     }
 
     // Check for duplicates
-    db_oid = exist(name);
+    const auto db_oid = exist(name);
 
     if( db_oid != -1 )
     {
-        goto error_duplicated;
+        ostringstream oss;
+
+        oss << "NAME is already taken by CLUSTER " << db_oid << ".";
+        error_str = oss.str();
+
+        return *oid;
     }
 
     // Build a new Cluster object
-    cluster = new Cluster(-1, name, 0, vnc_conf);
+    Cluster cluster {-1, name, 0, vnc_conf};
 
     // Insert the Object in the pool
     *oid = PoolSQL::allocate(cluster, error_str);
-
-    return *oid;
-
-
-error_duplicated:
-    oss << "NAME is already taken by CLUSTER " << db_oid << ".";
-    error_str = oss.str();
-
-error_name:
-    *oid = -1;
 
     return *oid;
 }
@@ -379,7 +371,3 @@ int ClusterPool::del_from_cluster(PoolObjectSQL::ObjectType type, Cluster* clust
 
     return 0;
 }
-
-/* -------------------------------------------------------------------------- */
-/* -------------------------------------------------------------------------- */
-

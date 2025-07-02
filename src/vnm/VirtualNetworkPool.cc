@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -126,25 +126,26 @@ int VirtualNetworkPool::allocate (
         const set<int>              &cluster_ids,
         string&                     error_str)
 {
-    VirtualNetwork * vn = nullptr;
-
-    int    db_oid;
     string name;
-
-    ostringstream oss;
-
     vn_template->get("NAME", name);
 
     // Check for duplicates
-    db_oid = exist(name, uid);
+    const auto db_oid = exist(name, uid);
 
     if( db_oid != -1 )
     {
-        goto error_duplicated;
+        ostringstream oss;
+
+        oss << "NAME is already taken by NET " << db_oid << ".";
+        error_str = oss.str();
+
+        *oid = -1;
+
+        return *oid;
     }
 
-    vn = new VirtualNetwork(uid, gid, uname, gname, umask, pvid,
-                            cluster_ids, move(vn_template));
+    VirtualNetwork vn {uid, gid, uname, gname, umask, pvid,
+                       cluster_ids, move(vn_template)};
 
     // Insert the VN in the DB
     *oid = PoolSQL::allocate(vn, error_str);
@@ -179,15 +180,7 @@ int VirtualNetworkPool::allocate (
 
     return *oid;
 
-
-error_duplicated:
-    oss << "NAME is already taken by NET " << db_oid << ".";
-    error_str = oss.str();
-
-    delete vn;
-
 error_common:
-
     *oid = -1;
 
     return *oid;
@@ -515,7 +508,6 @@ int VirtualNetworkPool::set_vlan_id(VirtualNetwork * vn)
             break;
 
         case VirtualNetwork::VLAN:
-        case VirtualNetwork::VCENTER:
         case VirtualNetwork::OVSWITCH:
             rc = set_8021Q_id(vn->get_oid(), vn->vlan_id, vn->vlan_id_automatic);
 
@@ -532,7 +524,6 @@ int VirtualNetworkPool::set_vlan_id(VirtualNetwork * vn)
         case VirtualNetwork::NONE:
         case VirtualNetwork::DUMMY:
         case VirtualNetwork::BRIDGE:
-        case VirtualNetwork::EBTABLES:
         case VirtualNetwork::FW:
             break;
     }
@@ -572,7 +563,6 @@ void VirtualNetworkPool::release_vlan_id(VirtualNetwork *vn)
     switch (VirtualNetwork::str_to_driver(vn->vn_mad))
     {
         case VirtualNetwork::VLAN:
-        case VirtualNetwork::VCENTER:
         case VirtualNetwork::OVSWITCH:
         case VirtualNetwork::OVSWITCH_VXLAN:
             if ( bitmap.select(VLAN_BITMAP_ID, db) != 0 )
@@ -586,7 +576,6 @@ void VirtualNetworkPool::release_vlan_id(VirtualNetwork *vn)
 
         case VirtualNetwork::NONE:
         case VirtualNetwork::DUMMY:
-        case VirtualNetwork::EBTABLES:
         case VirtualNetwork::FW:
         case VirtualNetwork::VXLAN:
         case VirtualNetwork::BRIDGE:

@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -21,6 +21,7 @@
 #include "HookStateVM.h"
 #include "HookManager.h"
 #include "ImageManager.h"
+#include "SchedulerManager.h"
 #include "HostPool.h"
 
 #include <sstream>
@@ -76,56 +77,8 @@ int VirtualMachinePool::update(PoolObjectSQL * objsql)
     return vm->update(db);
 };
 
-/* -------------------------------------------------------------------------- */
-/* -------------------------------------------------------------------------- */
-
-int VirtualMachinePool::insert_index(const string& deploy_id, int vmid,
-                                     bool replace)
-{
-    ostringstream oss;
-    char *        deploy_name = db->escape_str(deploy_id);
-
-    if (deploy_name == 0)
-    {
-        return -1;
-    }
-
-    if (replace)
-    {
-        oss << "REPLACE ";
-    }
-    else
-    {
-        oss << "INSERT ";
-    }
-
-    oss << "INTO " << one_db::vm_import_table
-        << " (" << one_db::vm_import_db_names << ") "
-        << " VALUES ('" << deploy_name << "'," << vmid << ")";
-
-    db->free_str(deploy_name);
-
-    return db->exec_wr(oss);
-};
 
 /* -------------------------------------------------------------------------- */
-
-void VirtualMachinePool::drop_index(const string& deploy_id)
-{
-    ostringstream oss;
-    char *        deploy_name = db->escape_str(deploy_id);
-
-    if (deploy_name == 0)
-    {
-        return;
-    }
-
-    oss << "DELETE FROM " << one_db::vm_import_table << " WHERE deploy_id='"
-        << deploy_name << "'";
-
-    db->exec_wr(oss);
-}
-
 /* -------------------------------------------------------------------------- */
 
 int VirtualMachinePool::allocate(
@@ -139,40 +92,23 @@ int VirtualMachinePool::allocate(
         string&        error_str,
         bool           on_hold)
 {
-    string deploy_id;
-
     // ------------------------------------------------------------------------
     // Build a new Virtual Machine object
     // ------------------------------------------------------------------------
-    auto vm = new VirtualMachine(-1, uid, gid, uname, gname, umask, move(vm_template));
+    VirtualMachine vm {-1, uid, gid, uname, gname, umask, move(vm_template)};
 
-    if ( _submit_on_hold == true || on_hold )
+    if ( _submit_on_hold || on_hold )
     {
-        vm->state = VirtualMachine::HOLD;
+        vm.state = VirtualMachine::HOLD;
 
-        vm->user_obj_template->replace("SUBMIT_ON_HOLD", true);
+        vm.user_obj_template->replace("SUBMIT_ON_HOLD", true);
     }
     else
     {
-        vm->state = VirtualMachine::PENDING;
+        vm.state = VirtualMachine::PENDING;
     }
 
-    vm->prev_state = vm->state;
-
-    vm->user_obj_template->get("DEPLOY_ID", deploy_id);
-
-    if (!deploy_id.empty())
-    {
-        vm->state = VirtualMachine::HOLD;
-
-        if (insert_index(deploy_id, -1, false) == -1) //Set import in progress
-        {
-            delete vm;
-
-            error_str = "Virtual Machine " + deploy_id + " already imported.";
-            return -1;
-        }
-    }
+    vm.prev_state = vm.state;
 
     // ------------------------------------------------------------------------
     // Insert the Object in the pool
@@ -184,18 +120,6 @@ int VirtualMachinePool::allocate(
     // Insert the deploy_id - vmid index for imported VMs
     // ------------------------------------------------------------------------
 
-    if (!deploy_id.empty())
-    {
-        if (*oid >= 0)
-        {
-            insert_index(deploy_id, *oid, true);
-        }
-        else
-        {
-            drop_index(deploy_id);
-        }
-    }
-
     if (*oid >= 0)
     {
         if (auto vm2 = get_ro(*oid))
@@ -203,6 +127,11 @@ int VirtualMachinePool::allocate(
             std::string event = HookStateVM::format_message(vm2.get());
 
             Nebula::instance().get_hm()->trigger_send_event(event);
+        }
+
+        if ( !_submit_on_hold && !on_hold)
+        {
+            Nebula::instance().get_sm()->trigger_place();
         }
     }
 
@@ -240,7 +169,12 @@ int VirtualMachinePool::get_pending(
     ostringstream   os;
     string          where;
 
-    os << "state = " << VirtualMachine::PENDING;
+    // Pending or ((poweroff or running or unknown) and resched))
+    os << "state = " << VirtualMachine::PENDING << " OR "
+       << "((state = " << VirtualMachine::POWEROFF << " OR "
+       << " lcm_state = " << VirtualMachine::RUNNING << " OR "
+       << " lcm_state = " << VirtualMachine::UNKNOWN <<") AND "
+       << " resched = 1 )";
 
     where = os.str();
 
@@ -257,6 +191,43 @@ int VirtualMachinePool::get_backup(vector<int>& oids)
     os << "state = " << VirtualMachine::ACTIVE
        << " and ( lcm_state = " << VirtualMachine::BACKUP
        << " or lcm_state = " << VirtualMachine::BACKUP_POWEROFF << " )";
+
+    return PoolSQL::search(oids, one_db::vm_table, os.str());
+}
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+
+int VirtualMachinePool::get_cluster_vms(int user_id, int group_id, int cid,
+                                        vector<int>& oids)
+{
+    ostringstream   os;
+
+    // Filter user
+    if (user_id >= 0)
+    {
+        os << "uid = " << user_id << " AND ";
+    }
+
+    // Filter group
+    if (group_id >= 0)
+    {
+        os << "gid = " << group_id << " AND ";
+    }
+
+    // Filter VM state
+    os << "state != " << VirtualMachine::DONE << " AND ";
+
+    // Filter cluster
+    if (db->supports(SqlDB::SqlFeature::JSON_QUERY))
+    {
+        os << "JSON_CONTAINS(body_json, '\"" << cid
+           << "\"', '$.VM.HISTORY_RECORDS.HISTORY[0].CID')";
+    }
+    else
+    {
+        os << "short_body LIKE '%<CID>" << cid << "</CID>%'";
+    }
 
     return PoolSQL::search(oids, one_db::vm_table, os.str());
 }
@@ -452,6 +423,19 @@ int VirtualMachinePool::dump_monitoring(
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
+int VirtualMachinePool::dump_history(std::string& oss, int vid)
+{
+    ostringstream cmd;
+
+    cmd << "SELECT body FROM " << one_db::history_table
+        << " WHERE vid = " << vid << " ORDER BY seq ASC";
+
+    return PoolSQL::dump(oss, "HISTORY_RECORDS", cmd);
+}
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+
 VirtualMachineMonitorInfo VirtualMachinePool::get_monitoring(int vmid)
 {
     ostringstream cmd;
@@ -472,38 +456,6 @@ VirtualMachineMonitorInfo VirtualMachinePool::get_monitoring(int vmid)
     }
 
     return info;
-}
-
-/* -------------------------------------------------------------------------- */
-/* -------------------------------------------------------------------------- */
-
-int VirtualMachinePool::get_vmid(const string& deploy_id)
-{
-    int rc;
-    int vmid = -1;
-    ostringstream oss;
-
-    auto sql_id = db->escape_str(deploy_id);
-
-    single_cb<int> cb;
-
-    cb.set_callback(&vmid);
-
-    oss << "SELECT vmid FROM " << one_db::vm_import_table
-        << " WHERE deploy_id = '" << sql_id << "'";
-
-    rc = db->exec_rd(oss, &cb);
-
-    cb.unset_callback();
-
-    db->free_str(sql_id);
-
-    if (rc != 0 )
-    {
-        return -1;
-    }
-
-    return vmid;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1002,17 +954,14 @@ int VirtualMachinePool::calculate_showback(
 
 void VirtualMachinePool::delete_attach_disk(std::unique_ptr<VirtualMachine> vm)
 {
-    int uid;
-    int gid;
-    int oid;
-
     VirtualMachineDisk * disk = nullptr;
 
     disk = vm->delete_attach_disk();
 
-    uid  = vm->get_uid();
-    gid  = vm->get_gid();
-    oid  = vm->get_oid();
+    int uid  = vm->get_uid();
+    int gid  = vm->get_gid();
+    int oid  = vm->get_oid();
+    int cid  = vm->get_cid();
 
     vm->set_vm_info();
 
@@ -1042,6 +991,7 @@ void VirtualMachinePool::delete_attach_disk(std::unique_ptr<VirtualMachine> vm)
 
     Template tmpl;
 
+    tmpl.add("CLUSTER_ID", cid);
     tmpl.set(disk->vector_attribute());
 
     if (disk->is_volatile())
@@ -1067,7 +1017,7 @@ void VirtualMachinePool::delete_attach_disk(std::unique_ptr<VirtualMachine> vm)
 
         const Snapshots * snaps = disk->get_snapshots();
 
-        if (snaps != nullptr)
+        if (snaps != nullptr && disk->persistent_snapshots())
         {
             imagem->set_image_snapshots(image_id, *snaps);
         }

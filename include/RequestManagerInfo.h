@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -69,7 +69,7 @@ protected:
         object->to_xml(str);
     };
 
-    virtual void load_monitoring(PoolObjectSQL *obj) const
+    virtual void load_extended_data(PoolObjectSQL *obj) const
     {
     }
 };
@@ -98,7 +98,7 @@ protected:
         static_cast<VirtualMachine *>(object)->to_xml_extended(str);
     };
 
-    void load_monitoring(PoolObjectSQL *obj) const override
+    void load_extended_data(PoolObjectSQL *obj) const override
     {
         static_cast<VirtualMachine*>(obj)->load_monitoring();
     }
@@ -205,7 +205,7 @@ public:
     };
 
 protected:
-    void load_monitoring(PoolObjectSQL *obj) const override
+    void load_extended_data(PoolObjectSQL *obj) const override
     {
         static_cast<Host*>(obj)->load_monitoring();
     }
@@ -291,6 +291,11 @@ public:
         pool       = nd.get_clpool();
         auth_object = PoolObjectSQL::CLUSTER;
     };
+
+    void load_extended_data(PoolObjectSQL *obj) const override
+    {
+        static_cast<Cluster*>(obj)->load_plan();
+    }
 };
 
 /* ------------------------------------------------------------------------- */

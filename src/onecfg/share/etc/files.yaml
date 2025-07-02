@@ -1,7 +1,7 @@
 ---
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -149,12 +149,12 @@
   mode: '0640'
   src: src/fireedge/etc/sunstone/sunstone-server.conf
 
-- name: /etc/one/fireedge/sunstone/sunstone-views.yaml
+- name: /etc/one/fireedge/sunstone/profiles/base.template
   class: Yaml
   owner: root
   group: oneadmin
   mode: '0640'
-  src: src/fireedge/etc/sunstone/sunstone-views.yaml
+  src: src/fireedge/etc/sunstone/profiles/base.template
 
 - name: /etc/one/fireedge/sunstone/*/*.yaml
   class: Yaml
@@ -162,6 +162,20 @@
   group: oneadmin
   mode: '0640'
   src: src/fireedge/etc/sunstone/*/*.yaml
+
+- name: /etc/one/fireedge/sunstone/*/*/*.yaml
+  class: Yaml
+  owner: root
+  group: oneadmin
+  mode: '0640'
+  src: src/fireedge/etc/sunstone/*/*/*.yaml
+
+- name: /etc/one/fireedge/sunstone/*.yaml
+  class: Yaml
+  owner: root
+  group: oneadmin
+  mode: '0640'
+  src: src/fireedge/etc/sunstone/*.yaml
 
 - name: /etc/one/monitord.conf
   class: Augeas::ONE
@@ -204,6 +218,20 @@
   group: oneadmin
   mode: '0640'
   src: src/scheduler/etc/sched.conf
+
+- name: /etc/one/schedulers/rank.conf
+  class: Augeas::ONE
+  owner: root
+  group: oneadmin
+  mode: '0640'
+  src: src/schedm_mad/remotes/rank/etc/rank.conf
+
+- name: /etc/one/schedulers/one_drs.conf
+  class: Yaml::Strict
+  owner: root
+  group: oneadmin
+  mode: '0640'
+  src: src/schedm_mad/remotes/one_drs/etc/one_drs.conf
 
 - name: /etc/one/sunstone-logos.yaml
   class: Yaml::Strict
@@ -282,6 +310,26 @@
   mode: '0640'
   src: src/vmm_mad/exec/vmm_exec_vcenter.conf
 
+- name: /etc/one/alertmanager/alertmanager.yml
+  class: Yaml
+  owner: root
+  group: oneadmin
+  mode: '0640'
+  src: src/oneprometheus/alertmanager/etc/alertmanager.yml
+
+- name: /etc/one/prometheus/prometheus.yml
+  class: Yaml
+  owner: root
+  group: oneadmin
+  mode: '0640'
+  src: src/oneprometheus/prometheus/etc/prometheus.yml
+
+- name: /etc/one/prometheus/rules.yml
+  class: Yaml
+  owner: root
+  group: oneadmin
+  mode: '0640'
+  src: src/oneprometheus/prometheus/etc/rules.yml
 
 ### Dir: /var/lib/one/remotes/etc/ #########################
 
@@ -320,6 +368,20 @@
   mode: '0640'
   src: src/im_mad/remotes/lib/probe_db.conf
 
+- name: /var/lib/one/remotes/etc/im/kvm-probes.d/guestagent.conf
+  class: Yaml
+  owner: oneadmin
+  group: oneadmin
+  mode: '0640'
+  src: src/im_mad/remotes/kvm-probes.d/guestagent.conf
+
+- name: /var/lib/one/remotes/etc/im/kvm-probes.d/forecast.conf
+  class: Yaml
+  owner: oneadmin
+  group: oneadmin
+  mode: '0640'
+  src: src/im_mad/remotes/kvm-probes.d/forecast.conf
+
 - name: /var/lib/one/remotes/etc/im/qemu-probes.d/pci.conf
   class: Yaml
   owner: oneadmin
@@ -340,6 +402,13 @@
   group: oneadmin
   mode: '0640'
   src: src/im_mad/remotes/lib/probe_db.conf
+
+- name: /var/lib/one/remotes/etc/im/lxc-probes.d/forecast.conf
+  class: Yaml
+  owner: oneadmin
+  group: oneadmin
+  mode: '0640'
+  src: src/im_mad/remotes/lib/forecast.conf
 
 - name: /var/lib/one/remotes/etc/im/lxd-probes.d/pci.conf
   class: Yaml

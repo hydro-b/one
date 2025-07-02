@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -121,16 +121,6 @@ public:
      *    @return the number of servers in the zone
      */
     unsigned int get_zone_servers(int zone_id, std::map<int, std::string>& srv);
-
-    /**
-     *  Return the list of zones defined
-     *    @param zone_ids of the zones
-     *    @return 0 on success
-     */
-    int list_zones(std::vector<int>& zone_ids)
-    {
-        return list( zone_ids, one_db::zone_table);
-    }
 
     /**
      * ID for the special local zone in stand-alone mode

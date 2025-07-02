@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -347,29 +347,6 @@ void HostMonitorManager::monitor_vm(int oid,
     };
 
     NebulaLog::info("HMM", "Successfully monitored VM: " + to_string(oid));
-}
-
-/* -------------------------------------------------------------------------- */
-/* -------------------------------------------------------------------------- */
-
-void HostMonitorManager::monitor_wild_vm(const string& deploy_id,
-                                         const Template &tmpl)
-{
-    if (!is_leader)
-    {
-        return;
-    }
-
-    // Wild VM, check if it is imported to OpenNebula
-    int oid = vmpool->get_vmid(deploy_id);
-
-    if (oid < 0)
-    {
-        // Not imported VM, ignore monitoring
-        return;
-    }
-
-    monitor_vm(oid, tmpl);
 }
 
 /* -------------------------------------------------------------------------- */

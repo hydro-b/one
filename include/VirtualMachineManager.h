@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -53,24 +53,6 @@ public:
      *   @param _mads configuration of drivers
      */
     int load_drivers(const std::vector<const VectorAttribute*>& _mads);
-
-    /**
-     *  Check if action is supported for imported VMs
-     *    @param mad name of the driver
-     *    @param action
-     *    @return True if it is supported
-     */
-    bool is_imported_action_supported(const std::string& mad, VMActions::Action action)
-    {
-        const VirtualMachineManagerDriver * vmd = get(mad);
-
-        if ( vmd == nullptr )
-        {
-            return false;
-        }
-
-        return vmd->is_imported_action_supported(action);
-    }
 
     /**
      * Updates firewall rules of a VM

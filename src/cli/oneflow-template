@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -29,23 +29,7 @@ else
 end
 
 # %%RUBYGEMS_SETUP_BEGIN%%
-if File.directory?(GEMS_LOCATION)
-    real_gems_path = File.realpath(GEMS_LOCATION)
-    if !defined?(Gem) || Gem.path != [real_gems_path]
-        $LOAD_PATH.reject! {|l| l =~ /vendor_ruby/ }
-
-        # Suppress warnings from Rubygems
-        # https://github.com/OpenNebula/one/issues/5379
-        begin
-            verb = $VERBOSE
-            $VERBOSE = nil
-            require 'rubygems'
-            Gem.use_paths(real_gems_path)
-        ensure
-            $VERBOSE = verb
-        end
-    end
-end
+require 'load_opennebula_paths'
 # %%RUBYGEMS_SETUP_END%%
 
 $LOAD_PATH << RUBY_LIB_LOCATION
@@ -67,6 +51,21 @@ USER_AGENT = 'CLI'
 
 # Base Path representing the resource to be used in the requests
 RESOURCE_PATH = '/service_template'
+
+RESOURCE_DOCUMENT_TYPE = '101'
+
+def check_document_type(response)
+    if CloudClient.is_error?(response)
+        return if response.code == '500' # could be wrong document_type; skip this id
+
+        exit_with_code response.code.to_i, response.to_s
+    else
+        document_type = JSON.parse(response.body)['DOCUMENT']['TYPE']
+        if document_type == RESOURCE_DOCUMENT_TYPE
+            yield
+        end
+    end
+end
 
 CommandParser::CmdParser.new(ARGV) do
     MULTIPLE = {
@@ -240,7 +239,10 @@ CommandParser::CmdParser.new(ARGV) do
         body['delete_type'] = delete
 
         Service.perform_actions(args[0]) do |template_id|
-            client.delete("#{RESOURCE_PATH}/#{template_id}", body.to_json)
+            response = client.get("#{RESOURCE_PATH}/#{template_id}")
+            check_document_type response do
+                client.delete("#{RESOURCE_PATH}/#{template_id}", body.to_json)
+            end
         end
     end
 
@@ -278,13 +280,13 @@ CommandParser::CmdParser.new(ARGV) do
             params['merge_template'] = {}
             body = JSON.parse(response.body)['DOCUMENT']['TEMPLATE']['BODY']
 
-            # Check global custom attributes
-            custom_attrs = helper.custom_attrs(body['custom_attrs'])
-            params['merge_template'].merge!(custom_attrs) unless custom_attrs.nil?
+            # Check global user inputs
+            user_inputs = helper.user_inputs(body['user_inputs'])
+            params['merge_template'].merge!(user_inputs) unless user_inputs.nil?
 
-            # Check role level custom attributes
-            custom_role_attrs = helper.custom_role_attrs(body['roles'])
-            params['merge_template'].merge!(custom_role_attrs) unless custom_role_attrs.nil?
+            # Check role level user inputs
+            user_inputs_attrs = helper.role_user_inputs(body['roles'])
+            params['merge_template'].merge!(user_inputs_attrs) unless user_inputs_attrs.nil?
 
             # Check vnets attributes
             vnets = helper.networks(body['networks'])

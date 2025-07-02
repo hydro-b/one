@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -59,6 +59,21 @@ DST_HOST=$(arg_host "$DST")
 SRC_DIR=$(dirname "$SRC_PATH")
 DST_DIR=$(dirname "$DST_PATH")
 
+#-------------------------------------------------------------------------------
+# Get Image information
+#-------------------------------------------------------------------------------
+
+DISK_ID=$(basename ${DST_PATH} | cut -d. -f2)
+
+XPATH="${DRIVER_PATH}/../../datastore/xpath.rb --stdin"
+unset i j XPATH_ELEMENTS
+while IFS= read -r -d '' element; do
+    XPATH_ELEMENTS[i++]="$element"
+done < <(onevm show -x $VMID| $XPATH \
+                    /VM/TEMPLATE/DISK[DISK_ID=$DISK_ID]/LVM_THIN_ENABLE)
+
+LVM_THIN_ENABLE="${XPATH_ELEMENTS[j++],,}"
+
 # Activate the disk in the target host
 if [ "$(is_disk "$SRC_PATH")" -eq 1 ]; then
     #---------------------------------------------------------------------------
@@ -72,6 +87,7 @@ if [ "$(is_disk "$SRC_PATH")" -eq 1 ]; then
 
     LCM_STATE=$(lcm_state "$VMID")
 
+    POOL_NAME="lv-one-$VMID-pool"
     LV_NAME="lv-one-${VMID}-${DISK_ID}"
     SRC_VG_NAME="vg-one-${SRC_DS_SYS_ID}"
     SRC_DEV="/dev/${SRC_VG_NAME}/${LV_NAME}"
@@ -90,6 +106,15 @@ if [ "$(is_disk "$SRC_PATH")" -eq 1 ]; then
               ${SYNC}
               ${SUDO} ${LVSCAN}
               ${SUDO} ${LVCHANGE} -an "${SRC_DEV}"
+
+              # Deactivate src pool if it does not have any more LVs
+              if [ -n "\$($SUDO $LVS --noheading -S 'vg_name = $SRC_VG_NAME && lv_name = $POOL_NAME')" ] &&
+                 [ -z "\$($SUDO $LVS --noheading -S 'vg_name = $SRC_VG_NAME && pool_lv = $POOL_NAME')" ]; then
+                  $SUDO $LVCHANGE -an "$SRC_VG_NAME/${POOL_NAME}"
+                  $SUDO $LVCHANGE -an "$SRC_VG_NAME/${POOL_NAME}_tmeta" || true
+                  $SUDO $LVCHANGE -an "$SRC_VG_NAME/${POOL_NAME}_tdata" || true
+              fi
+
             fi
 
             rm -f "${SRC_DIR}/.host" || :
@@ -111,41 +136,51 @@ EOF
 
     # copy volume between datastores
     if [ "${SRC_PATH}" != "${DST_PATH}" ]; then
-        # create new volume
+        # create new volume (on DST) (FIXME almost same code as in clone; unify it during Ruby rewrite)
         CREATE_CMD=$(cat <<EOF
             set -e -o pipefail
             ${SYNC}
             ${SUDO} ${LVSCAN}
             SIZE=\$(${SUDO} ${LVS} --noheadings --units B -o lv_size "${SRC_DEV}" | tr -d '[:blank:]')
-            ${SUDO} ${LVCREATE} --wipesignatures n -L"\${SIZE}" -n "${LV_NAME}" "${DST_VG_NAME}"
+
+            if [ "$LVM_THIN_ENABLE" = 'yes' ]; then
+                # If pool exists, extend it for the new disk. Otherwise, create it.
+                if [ -n "\$($SUDO $LVS --noheading -S "vg_name = $DST_VG_NAME && lv_name = $POOL_NAME")" ]; then
+                    $SUDO $LVEXTEND -L +\${SIZE}M $DST_VG_NAME/$POOL_NAME
+                else
+                    # -Zy is for auto-zeroing thin volumes. It already defaults to 'y' but just in case...
+                    $SUDO $LVCREATE -Zy -L \${SIZE}M --type thin-pool --thinpool $POOL_NAME $DST_VG_NAME
+                    $SUDO $LVCHANGE -an $DST_VG_NAME/$POOL_NAME
+                fi
+                $SUDO $LVCREATE -T $DST_VG_NAME/$POOL_NAME -V \${SIZE}M -n $LV_NAME
+            else
+                ${SUDO} ${LVCREATE} --wipesignatures n -L"\${SIZE}" -n "${LV_NAME}" "${DST_VG_NAME}"
+            fi
+
+            # Temporally enable source LV to copy from it
+            ${SUDO} ${LVCHANGE} -ay '${SRC_VG_NAME}/${LV_NAME}'
+            ${DD} if=${SRC_DEV} of=${DST_DEV} bs=${DD_BLOCK_SIZE:-64k} conv=sparse,fdatasync
+            ${SUDO} ${LVCHANGE} -an '${SRC_VG_NAME}/${LV_NAME}'
+
+            ${SYNC}
 EOF
 )
 
         LOCK="tm-fs_lvm-${DST_DS_SYS_ID}.lock"
         exclusive "${LOCK}" 120 ssh_exec_and_log "${DST_HOST}" "${CREATE_CMD}" \
-                "Error creating LV named ${LV_NAME}"
+                "Error copying LV contents from ${SRC_VG_NAME}/${LV_NAME} to ${DST_VG_NAME}/${LV_NAME}"
 
-        # activate src volume (on DST)
-        CMD=$(cat <<EOF
-            set -ex -o pipefail
-            ${SYNC}
-            ${SUDO} ${LVSCAN}
-            ${SUDO} ${LVCHANGE} -ay "${SRC_DEV}"
-EOF
-)
-        LOCK="tm-fs_lvm-${SRC_DS_SYS_ID}.lock"
-        exclusive "${LOCK}" 120 ssh_exec_and_log "${DST_HOST}" "${CMD}" \
-            "Error deactivating disk ${SRC_PATH}"
-
-        # copy volume data
-        ssh_exec_and_log "$DST_HOST" \
-            "${DD} if=${SRC_DEV} of=${DST_DEV} bs=${DD_BLOCK_SIZE:-64k}" \
-            "Error copying ${SRC} to ${DST}"
-
-        # delete old volume and update device symlinks
+        # delete old volume and update device symlinks (on DST)
         DELETE_CMD=$(cat <<EOF
             set -e -o pipefail
-            ${SUDO} ${LVREMOVE} -f ${SRC_DEV}
+            ${SYNC}
+            ${SUDO} ${LVSCAN}
+            ${SUDO} ${LVREMOVE} -y ${SRC_DEV}
+            # Remove src pool if it does not have any more LVs
+            if [ -n "\$($SUDO $LVS --noheading -S 'vg_name = $SRC_VG_NAME && lv_name = $POOL_NAME')" ] &&
+               [ -z "\$($SUDO $LVS --noheading -S 'vg_name = $SRC_VG_NAME && pool_lv = $POOL_NAME')" ]; then
+                $SUDO $LVREMOVE -y '$SRC_VG_NAME/$POOL_NAME'
+            fi
             ${SYNC}
 
             rm -f "${SRC_PATH}"
@@ -163,12 +198,30 @@ EOF
             ${SYNC}
             ${SUDO} ${LVSCAN}
             ${SUDO} ${LVCHANGE} -ay "${DST_DEV}"
+            ${SYNC}
 
+            mkdir -p "${DST_DIR}"
             hostname -f >"${DST_DIR}/.host" || :
 EOF
 )
         ssh_exec_and_log "$DST_HOST" "$CMD" \
             "Error activating disk $DST_PATH"
+    fi
+
+    # In FT mode, we don't have access to source host and ssh/mv does nothing. Create symbolic
+    # link manually in that case.
+    # 60(61) = PROLOG_MIGRATE_UNKNOWN(+FAILURE)
+    if [[ "$LCM_STATE" =~ ^(60|61)$ ]]; then
+        SYMLINK_CMD=$(cat <<EOF
+            mkdir -p "${DST_DIR}"
+            ln -s "${DST_DEV}" "${DST_PATH}"
+EOF
+)
+
+        LOCK="tm-fs_lvm-${DST_DS_SYS_ID}.lock"
+        exclusive "${LOCK}" 120 ssh_exec_and_log "${DST_HOST}" "${SYMLINK_CMD}" \
+                "Error creating symlink ${DST_PATH} -> ${DST_DEV}"
+
     fi
 fi
 

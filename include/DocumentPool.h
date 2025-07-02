@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -61,10 +61,10 @@ public:
                  int *                    oid,
                  std::string&             error_str)
     {
-        *oid = PoolSQL::allocate(
-                       new Document(-1, uid, gid, uname, gname, umask, type,
-                                    std::move(template_contents)),
-                       error_str);
+        Document doc {-1, uid, gid, uname, gname, umask, type,
+                      std::move(template_contents)};
+
+        *oid = PoolSQL::allocate(doc, error_str);
 
         return *oid;
     }

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -88,14 +88,14 @@ elif command -v rpm >/dev/null; then
       export SMDEV_CONTAINER_OFF=1
       subscription-manager register --username ${RHEL_USER} \
                                     --password ${RHEL_PASSWORD} \
-                                    --force
+                                    --force --auto-attach
       subscription-manager attach --pool=${RHEL_POOL_ID}
       subscription-manager repos --enable codeready-builder-for-rhel-8-x86_64-rpms ||:
       subscription-manager repos --enable codeready-builder-for-rhel-9-x86_64-rpms ||:
     fi
 
     if command -v dnf >/dev/null; then
-        dnf -q -y upgrade almalinux-release ||:
+        dnf -q -y --nogpgcheck upgrade almalinux-release ||:
         dnf -q -y install 'dnf-command(config-manager)'
         dnf config-manager --set-enabled powertools ||:
         dnf config-manager --set-enabled crb        ||: # alma9
@@ -110,7 +110,7 @@ find /usr -name 'bundler*.gemspec' -delete
 export PATH=\$PATH:/usr/local/bin
 
 # use latest bundler since ruby 3.2
-if ruby -e 'Gem::Version.new(\`ruby --version | cut -d " "  -f2\`) > Gem::Version.new("3.2") ? exit(0) : exit(1)'; then
+if ruby -e 'Gem::Version.new(\`ruby --version | cut -d " "  -f2\`) > Gem::Version.new("3.1.1") ? exit(0) : exit(1)'; then
     gem install bundler --no-document --quiet
 else
     gem install bundler -v '<2' --no-document --quiet

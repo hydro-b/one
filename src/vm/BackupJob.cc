@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -34,7 +34,7 @@ const int BackupJob::MAX_USER_PRIO = 49;
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
-BackupJob::BackupJob(int          uid,
+BackupJob::BackupJob(int                 uid,
                      int                 gid,
                      const std::string&  uname,
                      const std::string&  gname,
@@ -56,7 +56,7 @@ BackupJob::BackupJob(int          uid,
     }
     else
     {
-        obj_template = get_new_template();
+        obj_template = BackupJob::get_new_template();
     }
 
     set_umask(umask);

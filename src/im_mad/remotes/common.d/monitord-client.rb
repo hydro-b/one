@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -15,10 +15,30 @@
 # See the License for the specific language governing permissions and        #
 # limitations under the License.                                             #
 #--------------------------------------------------------------------------- #
+
+ONE_LOCATION = ENV['ONE_LOCATION'] unless defined?(ONE_LOCATION)
+
+if !ONE_LOCATION
+    LIB_LOCATION      ||= '/usr/lib/one'
+    RUBY_LIB_LOCATION ||= '/usr/lib/one/ruby'
+    GEMS_LOCATION     ||= '/usr/share/one/gems'
+else
+    LIB_LOCATION      ||= ONE_LOCATION + '/lib'
+    RUBY_LIB_LOCATION ||= ONE_LOCATION + '/lib/ruby'
+    GEMS_LOCATION     ||= ONE_LOCATION + '/share/gems'
+end
+
+# %%RUBYGEMS_SETUP_BEGIN%%
+require 'load_opennebula_paths'
+# %%RUBYGEMS_SETUP_END%%
+
+$LOAD_PATH << RUBY_LIB_LOCATION
+
 require 'base64'
 require 'yaml'
 require 'open3'
 require 'openssl'
+require 'fileutils'
 
 require 'rexml/document'
 
@@ -45,7 +65,7 @@ class ProbeRunner
     # rubocop:disable Lint/SuppressedException
     def run_probes
         data = ''
-        dpro = Dir.new(@path)
+        dpro = Dir.new(@path).entries.sort
 
         dpro.each do |probe|
             probe_path = File.join(@path, probe)
@@ -147,24 +167,22 @@ class ProbeRunner
 end
 
 #-------------------------------------------------------------------------------
-#  Script helper functions and gLobals
-#-------------------------------------------------------------------------------
-LOCAL_HYPERVISOR = ['az', 'ec2', 'one', 'equinix'].freeze
-
-def local?(hypervisor)
-    LOCAL_HYPERVISOR.include?(hypervisor)
-end
-
-#-------------------------------------------------------------------------------
 # Configuration (from monitord)
 #-------------------------------------------------------------------------------
+DB_PATH = '/var/tmp/one_db'
+
+FileUtils.mkdir_p(DB_PATH)
+
 xml_txt = STDIN.read
 
 begin
     hyperv = ARGV[0].split(' ')[0]
 
-    xml_txt = Base64.decode64(xml_txt) if local? hyperv
-    config  = REXML::Document.new(xml_txt).root
+    config = REXML::Document.new(xml_txt).root
+
+    File.open(File.join(DB_PATH, 'config'), 'w') do |file|
+        file.write(xml_txt)
+    end
 
     host   = config.elements['NETWORK/MONITOR_ADDRESS'].text.to_s
     port   = config.elements['NETWORK/PORT'].text.to_s
@@ -172,7 +190,7 @@ begin
     hostid = config.elements['HOST_ID'].text.to_s
 
     if host == 'auto'
-        if local?(hyperv) || hyperv == 'dummy'
+        if hyperv == 'dummy'
             host = '127.0.0.1'
         else
             begin

@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -55,6 +55,8 @@ public:
     {
         return is_flag("PERSISTENT");
     }
+
+    bool persistent_snapshots() const;
 
     Snapshots::AllowOrphansMode allow_orphans() const;
 
@@ -305,6 +307,18 @@ public:
     void delete_snapshot(int snap_id, Template& ds_quota, Template& vm_quota,
                          bool& io, bool& vo);
 
+    /**
+     *  Deletes all younger (bigger snap_id) snapshots
+     *    @param snap_id of the last snapshot to keep
+     *    @param ds_quotas template with snapshot usage for the DS quotas
+     *    @param vm_quotas template with snapshot usage for the VM quotas
+     *    @param io delete ds quotas from image owners
+     *    @param vo delete ds quotas from vm owners
+     */
+    void delete_younger_snapshots(int snap_id, Template& ds_quota, Template& vm_quota,
+        bool& io, bool& vo);
+
+
     /* ---------------------------------------------------------------------- */
     /* Disk resize functions                                                  */
     /* ---------------------------------------------------------------------- */
@@ -544,7 +558,7 @@ public:
      *  @return 0 if success
      */
     int get_images(int vm_id, int uid, const std::string& tm_mad_sys,
-                   std::vector<VectorAttribute *> disks, VectorAttribute * context,
+                   std::vector<VectorAttribute *>& disks, VectorAttribute * context,
                    bool is_q35, std::string& error_str);
 
     /**
@@ -823,6 +837,13 @@ public:
     bool backup_increment(bool do_volatile);
 
     /**
+     *  Returns true if all disks support keep last feature for backups
+     *
+     *  @param do_volatile consider volatile disks
+     */
+    bool backup_keep_last(bool do_volatile);
+
+    /**
      *  Returns list of disk IDs, ready for backup
      *
      *  @param do_volatile consider volatile disks
@@ -832,7 +853,7 @@ public:
 protected:
 
     VirtualMachineAttribute * attribute_factory(VectorAttribute * va,
-                                                int id) const
+                                                int id) const override
     {
         return new VirtualMachineDisk(va, id);
     };

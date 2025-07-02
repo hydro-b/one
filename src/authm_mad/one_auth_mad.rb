@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -29,28 +29,12 @@ else
 end
 
 # %%RUBYGEMS_SETUP_BEGIN%%
-if File.directory?(GEMS_LOCATION)
-    real_gems_path = File.realpath(GEMS_LOCATION)
-    if !defined?(Gem) || Gem.path != [real_gems_path]
-        $LOAD_PATH.reject! {|l| l =~ /vendor_ruby/ }
-
-        # Suppress warnings from Rubygems
-        # https://github.com/OpenNebula/one/issues/5379
-        begin
-            verb = $VERBOSE
-            $VERBOSE = nil
-            require 'rubygems'
-            Gem.use_paths(real_gems_path)
-        ensure
-            $VERBOSE = verb
-        end
-    end
-end
+require 'load_opennebula_paths'
 # %%RUBYGEMS_SETUP_END%%
 
 $LOAD_PATH << RUBY_LIB_LOCATION
 
-require 'scripts_common'
+require 'DriverLogger'
 require 'OpenNebulaDriver'
 require 'getoptlong'
 require 'shellwords'
@@ -125,7 +109,7 @@ class AuthDriver < OpenNebulaDriver
     # @param [String] secret filed of the auth string
     def authN(request_id, user_id, driver, user, password, secret)
 
-        #OpenNebula.log_debug("authN: #{request_id} #{user_id} #{driver} #{password} #{secret}")
+        #OpenNebula::DriverLogger.log_debug("authN: #{request_id} #{user_id} #{driver} #{password} #{secret}")
 
         unless @authN_protocols.include?(driver)
             return send_message(
@@ -172,7 +156,7 @@ class AuthDriver < OpenNebulaDriver
 
         requests.flatten!
 
-        #OpenNebula.log_debug("authZ: #{request_id} #{user_id} #{requests}")
+        #OpenNebula::DriverLogger.log_debug("authZ: #{request_id} #{user_id} #{requests}")
 
         if @authZ_cmd == nil
             if requests[-1] == "1"

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -21,7 +21,7 @@ module OpenNebula
     # Service Template
     class ServiceTemplate < DocumentJSON
 
-        ROLE_SCHEMA = {
+        VM_ROLE_SCHEMA = {
             :type => :object,
             :properties => {
                 'name' => {
@@ -29,25 +29,33 @@ module OpenNebula
                     :required => true,
                     :regex => /^\w+$/
                 },
+                'type' => {
+                    :type => :string,
+                    :enum => [
+                        'vm'
+                    ],
+                    :required => true
+                },
                 'cardinality' => {
                     :type => :integer,
                     :default => 0,
                     :minimum => 0
                 },
-                'vm_template' => {
+                'template_id' => {
                     :type => :integer,
                     :required => true
                 },
-                'vm_template_contents' => {
-                    :type => :string,
-                    :required => false
-                },
-                'custom_attrs' => {
+                'template_contents' => {
                     :type => :object,
                     :properties => {},
                     :required => false
                 },
-                'custom_attrs_values' => {
+                'user_inputs' => {
+                    :type => :object,
+                    :properties => {},
+                    :required => false
+                },
+                'user_inputs_values' => {
                     :type => :object,
                     :properties => {},
                     :required => false
@@ -173,6 +181,58 @@ module OpenNebula
             }
         }
 
+        VR_ROLE_SCHEMA = {
+            :type => :object,
+            :properties => {
+                'name' => {
+                    :type => :string,
+                    :required => true,
+                    :regex => /^\w+$/
+                },
+                'type' => {
+                    :type => :string,
+                    :enum => [
+                        'vr'
+                    ],
+                    :required => true
+                },
+                'template_id' => {
+                    :type => :integer,
+                    :required => true
+                },
+                'cardinality' => {
+                    :type => :integer,
+                    :default => 0,
+                    :minimum => 0
+                },
+                'template_contents' => {
+                    :type => :object,
+                    :properties => {},
+                    :required => false
+                },
+                'user_inputs' => {
+                    :type => :object,
+                    :properties => {},
+                    :required => false
+                },
+                'user_inputs_values' => {
+                    :type => :object,
+                    :properties => {},
+                    :required => false
+                },
+                'on_hold' => {
+                    :type => :boolean,
+                    :required => false
+                },
+                'parents' => {
+                    :type => :array,
+                    :items => {
+                        :type => :string
+                    }
+                }
+            }
+        }
+
         SCHEMA = {
             :type => :object,
             :properties => {
@@ -201,15 +261,15 @@ module OpenNebula
                 },
                 'roles' => {
                     :type => :array,
-                    :items => ROLE_SCHEMA,
+                    :items => [],
                     :required => true
                 },
-                'custom_attrs' => {
+                'user_inputs' => {
                     :type => :object,
                     :properties => {},
                     :required => false
                 },
-                'custom_attrs_values' => {
+                'user_inputs_values' => {
                     :type => :object,
                     :properties => {},
                     :required => false
@@ -259,7 +319,6 @@ module OpenNebula
 
         def allocate(template_json)
             template = JSON.parse(template_json)
-
             ServiceTemplate.validate(template)
 
             template['registration_time'] = Integer(Time.now)
@@ -376,11 +435,11 @@ module OpenNebula
 
             # iterate over roles to clone templates
             rc = body['roles'].each do |role|
-                t_id = role['vm_template']
+                t_id = role['template_id']
 
                 # if the template has already been cloned, just update the value
                 if cloned_templates.keys.include?(t_id)
-                    role['vm_template'] = cloned_templates[t_id]
+                    role['template_id'] = cloned_templates[t_id]
                     next
                 end
 
@@ -404,7 +463,7 @@ module OpenNebula
                 # add new ID to the hash
                 cloned_templates[t_id] = rc
 
-                role['vm_template'] = rc
+                role['template_id'] = rc
             end
 
             # if any error, rollback and delete the left templates
@@ -469,6 +528,12 @@ module OpenNebula
         end
 
         def self.validate(template)
+            # Compability mode v<7.0
+            rc = ServiceTemplate.convert_template(template) \
+                if ServiceTemplate.old_format?(template)
+
+            raise Validator::ParseException(rc.message) if OpenNebula.is_error?(rc)
+
             validator = Validator::Validator.new(
                 :default_values => true,
                 :delete_extra_properties => false,
@@ -476,6 +541,10 @@ module OpenNebula
             )
 
             validator.validate!(template, SCHEMA)
+
+            template['roles'].each do |role|
+                validate_role(role)
+            end
 
             validate_values(template)
         end
@@ -487,7 +556,16 @@ module OpenNebula
                 :allow_extra_properties => true
             )
 
-            validator.validate!(template, ROLE_SCHEMA)
+            tmplt_type = template.fetch('type', 'vm')
+
+            case tmplt_type
+            when 'vm'
+                validator.validate!(template, VM_ROLE_SCHEMA)
+            when 'vr'
+                validator.validate!(template, VR_ROLE_SCHEMA)
+            else
+                raise Validator::ParseException, "Unsupported role type \"#{template['type']}\""
+            end
         end
 
         def instantiate(merge_template)
@@ -496,6 +574,8 @@ module OpenNebula
             if merge_template.nil?
                 instantiate_template = JSON.parse(@body.to_json)
             else
+                @body = handle_nested_values(@body, merge_template)
+
                 instantiate_template = JSON.parse(@body.to_json)
                                            .deep_merge(merge_template)
             end
@@ -518,107 +598,27 @@ module OpenNebula
         end
 
         def self.validate_values(template)
-            parser = ElasticityGrammarParser.new
-
             roles = template['roles']
 
             roles.each_with_index do |role, role_index|
-                roles[role_index+1..-1].each do |other_role|
+                # General verification (applies to all roles)
+                roles[(role_index+1)..-1].each do |other_role|
                     if role['name'] == other_role['name']
                         raise Validator::ParseException,
                               "Role name '#{role['name']}' is repeated"
                     end
                 end
 
-                if !role['min_vms'].nil? &&
-                   role['min_vms'].to_i > role['cardinality'].to_i
-
+                # Specific values verification per role type
+                case role['type']
+                when 'vm'
+                    parser = ElasticityGrammarParser.new
+                    validate_vmvalues(role, parser)
+                when 'vr'
+                    validate_vrvalues(role)
+                else
                     raise Validator::ParseException,
-                          "Role '#{role['name']}' 'cardinality' must be " \
-                          "greater than or equal to 'min_vms'"
-                end
-
-                if !role['max_vms'].nil? &&
-                   role['max_vms'].to_i < role['cardinality'].to_i
-
-                    raise Validator::ParseException,
-                          "Role '#{role['name']}' 'cardinality' must be " \
-                          "lower than or equal to 'max_vms'"
-                end
-
-                if ((role['elasticity_policies'] &&
-                    !role['elasticity_policies'].empty?) ||
-                   (role['scheduled_policies'] &&
-                   !role['scheduled_policies'].empty?)) &&
-                   (role['min_vms'].nil? || role['max_vms'].nil?)
-                    raise Validator::ParseException,
-                          "Role '#{role['name']}' with " \
-                          " 'elasticity_policies' or " \
-                          "'scheduled_policies'must define both 'min_vms'" \
-                          " and 'max_vms'"
-                end
-
-                if role['elasticity_policies']
-                    role['elasticity_policies'].each_with_index do |policy, index|
-                        exp = policy['expression']
-
-                        if exp.empty?
-                            raise Validator::ParseException,
-                                  "Role '#{role['name']}', elasticity policy " \
-                                  "##{index} 'expression' cannot be empty"
-                        end
-
-                        treetop = parser.parse(exp)
-                        next unless treetop.nil?
-
-                        raise Validator::ParseException,
-                              "Role '#{role['name']}', elasticity policy " \
-                              "##{index} 'expression' parse error: " \
-                              "#{parser.failure_reason}"
-                    end
-                end
-
-                next unless role['scheduled_policies']
-
-                role['scheduled_policies'].each_with_index do |policy, index|
-                    start_time = policy['start_time']
-                    recurrence = policy['recurrence']
-
-                    if !start_time.nil?
-                        if !policy['recurrence'].nil?
-                            raise Validator::ParseException,
-                                  "Role '#{role['name']}', scheduled policy "\
-                                  "##{index} must define "\
-                                  "'start_time' or 'recurrence', but not both"
-                        end
-
-                        begin
-                            next if start_time.match(/^\d+$/)
-
-                            Time.parse(start_time)
-                        rescue ArgumentError
-                            raise Validator::ParseException,
-                                  "Role '#{role['name']}', scheduled policy " \
-                                  "##{index} 'start_time' is not a valid " \
-                                  'Time. Try with YYYY-MM-DD hh:mm:ss or ' \
-                                  '0YYY-MM-DDThh:mm:ssZ'
-                        end
-                    elsif !recurrence.nil?
-                        begin
-                            cron_parser = CronParser.new(recurrence)
-                            cron_parser.next
-                        rescue StandardError
-                            raise Validator::ParseException,
-                                  "Role '#{role['name']}', scheduled policy " \
-                                  "##{index} 'recurrence' is not a valid " \
-                                  'cron expression'
-                        end
-                    else
-                        raise Validator::ParseException,
-                              "Role '#{role['name']}', scheduled policy #" \
-                              "#{index} needs to define either " \
-                              "'start_time' or 'recurrence'"
-                    end
+                          "Unsupported role type \"#{template['type']}\""
                 end
             end
         end
@@ -634,11 +634,266 @@ module OpenNebula
             ret = []
 
             @body['roles'].each do |role|
-                t_id = Integer(role['vm_template'])
+                t_id = Integer(role['template_id'])
                 ret << t_id unless ret.include?(t_id)
             end
 
             ret
+        end
+
+        def self.validate_vrvalues(vrrole)
+            nic_array   = vrrole.dig('template_contents', 'NIC')
+            cardinality = vrrole['cardinality']
+
+            return if nic_array.nil? || !nic_array.is_a?(Array)
+
+            contains_floating_key = nic_array.any? do |nic|
+                nic.keys.any? do |key|
+                    key.to_s.start_with?('FLOATING')
+                end
+            end
+
+            return unless cardinality > 1 && !contains_floating_key
+
+            raise(
+                Validator::ParseException,
+                "Role '#{vrrole['name']}' with 'cardinality' greather " \
+                'than one must define a floating IP'
+            )
+        end
+
+        def self.validate_vmvalues(vmrole, parser)
+            if !vmrole['min_vms'].nil? &&
+                vmrole['min_vms'].to_i > vmrole['cardinality'].to_i
+
+                raise Validator::ParseException,
+                      "Role '#{vmrole['name']}' 'cardinality' must be " \
+                      "greater than or equal to 'min_vms'"
+            end
+
+            if !vmrole['max_vms'].nil? &&
+                vmrole['max_vms'].to_i < vmrole['cardinality'].to_i
+
+                raise Validator::ParseException,
+                      "Role '#{vmrole['name']}' 'cardinality' must be " \
+                      "lower than or equal to 'max_vms'"
+            end
+
+            if ((vmrole['elasticity_policies'] &&
+               !vmrole['elasticity_policies'].empty?) ||
+               (vmrole['scheduled_policies'] &&
+               !vmrole['scheduled_policies'].empty?)) &&
+               (vmrole['min_vms'].nil? || vmrole['max_vms'].nil?)
+                raise Validator::ParseException,
+                      "Role '#{vmrole['name']}' with " \
+                      " 'elasticity_policies' or " \
+                      "'scheduled_policies'must define both 'min_vms'" \
+                      " and 'max_vms'"
+            end
+
+            if vmrole['elasticity_policies']
+                vmrole['elasticity_policies'].each_with_index do |policy, index|
+                    exp = policy['expression']
+
+                    if exp.empty?
+                        raise Validator::ParseException,
+                              "Role '#{vmrole['name']}', elasticity policy " \
+                              "##{index} 'expression' cannot be empty"
+                    end
+
+                    treetop = parser.parse(exp)
+                    next unless treetop.nil?
+
+                    raise Validator::ParseException,
+                          "Role '#{vmrole['name']}', elasticity policy " \
+                          "##{index} 'expression' parse error: " \
+                          "#{parser.failure_reason}"
+                end
+            end
+
+            return unless vmrole['scheduled_policies']
+
+            vmrole['scheduled_policies'].each_with_index do |policy, index|
+                start_time = policy['start_time']
+                recurrence = policy['recurrence']
+
+                if !start_time.nil?
+                    if !policy['recurrence'].nil?
+                        raise Validator::ParseException,
+                              "Role '#{vmrole['name']}', scheduled policy "\
+                              "##{index} must define "\
+                              "'start_time' or 'recurrence', but not both"
+                    end
+
+                    begin
+                        next if start_time.match(/^\d+$/)
+
+                        Time.parse(start_time)
+                    rescue ArgumentError
+                        raise Validator::ParseException,
+                              "Role '#{vmrole['name']}', scheduled policy " \
+                              "##{index} 'start_time' is not a valid " \
+                              'Time. Try with YYYY-MM-DD hh:mm:ss or ' \
+                              '0YYY-MM-DDThh:mm:ssZ'
+                    end
+                elsif !recurrence.nil?
+                    begin
+                        cron_parser = CronParser.new(recurrence)
+                        cron_parser.next
+                    rescue StandardError
+                        raise Validator::ParseException,
+                              "Role '#{vmrole['name']}', scheduled policy " \
+                              "##{index} 'recurrence' is not a valid " \
+                              'cron expression'
+                    end
+                else
+                    raise Validator::ParseException,
+                          "Role '#{vmrole['name']}', scheduled policy #" \
+                          "#{index} needs to define either " \
+                          "'start_time' or 'recurrence'"
+                end
+            end
+        end
+
+        def handle_nested_values(template, extra_template)
+            roles        = template['roles']
+            extra_roles  = extra_template.fetch('roles', [])
+
+            # Check if nics key already exist
+            template_nets = template['networks_values'] || []
+            extra_nets    = extra_template['networks_values'] || []
+
+            unless extra_nets.empty?
+                extra_nets.each do |extra_net|
+                    next unless extra_net.is_a?(Hash) && !extra_net.empty?
+
+                    net_name  = extra_net.keys.first
+                    net_index = template_nets.index {|net| net.key?(net_name) }
+
+                    if net_index
+                        template_nets[net_index] = extra_net
+                    else
+                        template_nets << extra_net
+                    end
+                end
+
+                template['networks_values']       = template_nets
+                extra_template['networks_values'] = []
+            end
+
+            return template if extra_roles.empty?
+
+            roles.each_with_index do |role, index|
+                extra_role = extra_roles.find {|item| item['name'] == role['name'] }
+                next unless extra_role
+
+                roles[index] = role.deep_merge(extra_role)
+            end
+
+            extra_template.delete('roles')
+
+            template
+        end
+
+        def self.old_format?(body)
+            body.key?('roles') && body['roles'].all? do |role|
+                role.key?('vm_template') || role.key?('vm_template_contents')
+            end
+        end
+
+        # Compatibility function to translate a service template from the old format
+        # to the new one with vRouters with other data model changes
+        #
+        # @param template [String] Hash body of the service template to translate
+        def self.convert_template(body)
+            body['roles'].each do |role|
+                # Mandatory
+                role['template_id'] = role['vm_template'].to_i
+                role['type']        = 'vm'
+
+                # Optional attributes
+                role['user_inputs']        = role['custom_attrs'] if role['custom_attrs']
+                body['user_inputs_values'] = role['custom_attrs_values'] \
+                                             if body['custom_attrs_values']
+
+                # Change name and type (string -> object)
+                role['template_contents'] = ServiceTemplate.upgrade_template_contents(
+                    role['vm_template_contents']
+                ) if role['vm_template_contents']
+
+                # Remove old attributes
+                role.delete('vm_template')
+                role.delete('vm_template_contents') if role['vm_template_contents']
+                role.delete('custom_attrs') if role['custom_attrs']
+                role.delete('custom_attrs_values') if role['custom_attrs_values']
+            end
+
+            body['user_inputs'] = body['custom_attrs'] if body['custom_attrs']
+            body['user_inputs_values'] = body['custom_attrs_values'] if body['custom_attrs_values']
+
+            body.delete('custom_attrs') if body['custom_attrs']
+            body.delete('custom_attrs_values') if body['custom_attrs_values']
+        rescue StandardError => e
+            return OpenNebula::Error.new(
+                'An old service template format (OpenNebula v6.x) was detected and could not be ' \
+                'automatically converted. Update it manually to the new format. Error: ' + e.message
+            )
+        end
+
+        # Converts a RAW string in the form KEY = VAL to a hash
+        #
+        # @param template [String]          Raw string content in the form KEY = VAL,
+        #                                   representing vm_template_contents
+        # @return [Hash, OpenNebula::Error] Hash representation of the raw content,
+        #                                   or an OpenNebula Error if the conversion fails
+        def self.upgrade_template_contents(vm_template_contents)
+            return {} if vm_template_contents.nil? || vm_template_contents.empty?
+
+            result = {}
+
+            vm_template_contents.split(/\n(?![^\[]*\])/).each do |line|
+                next unless line.include?('=')
+
+                key, value = line.split('=', 2).map(&:strip)
+                value = value.tr('"', '')
+
+                # If the value is an array (e.g., NIC = [ ... ]),
+                # process the content inside the brackets
+                if value.start_with?('[') && value.end_with?(']')
+                    # Split the elements inside the brackets by commas
+                    array_elements = value[1..-2].split(/\s*,\s*/)
+
+                    # Create a hash combining all key-value pairs in the array
+                    array_result = {}
+                    array_elements.each do |element|
+                        sub_key, sub_value = element.split('=', 2).map(&:strip)
+                        array_result[sub_key] = sub_value
+                    end
+
+                    value = [array_result]
+                else
+                    value = [value]
+                end
+
+                # If the key already exists in the result hash, add the new value
+                if result[key]
+                    if result[key].is_a?(Array)
+                        result[key] << value.first
+                    else
+                        result[key] = [result[key], value.first]
+                    end
+                else
+                    result[key] = value.first
+                end
+            end
+
+            result.each do |key, val|
+                if val.is_a?(Hash)
+                    result[key] = [val]
+                end
+            end
+
+            result
         end
 
     end

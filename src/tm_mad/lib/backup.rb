@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -17,13 +17,79 @@
 #--------------------------------------------------------------------------- #
 
 require 'CommandManager'
+require_relative 'kvm'
 
 module TransferManager
+
+    # Virtual Machine containing the disks to backup
+    class VM
+
+        include TransferManager::KVM
+
+        def initialize(vm_xml, disks)
+            @xml   = vm_xml
+            @disks = disks
+        end
+
+        def backup_disks_sh(disks, backup_dir, ds, live, deploy_id = nil)
+            snap_cmd = ''
+            expo_cmd = ''
+            clup_cmd = ''
+            @disks.compact.each do |d|
+                did = d.id
+                next unless disks.include? did.to_s
+
+                cmds = d.backup_cmds(backup_dir, ds, live)
+                return nil unless cmds
+
+                snap_cmd << cmds[:snapshot]
+                expo_cmd << cmds[:export]
+                clup_cmd << cmds[:cleanup]
+            end
+
+            freeze, thaw =
+                if live
+                    fsfreeze(@xml, deploy_id)
+                else
+                    ['', '']
+                end
+
+            <<~EOS
+                set -ex -o pipefail
+
+                # ----------------------
+                # Prepare backup folder
+                # ----------------------
+                [ -d #{backup_dir} ] && rm -rf #{backup_dir}
+
+                mkdir -p #{backup_dir}
+
+                echo "#{Base64.encode64(@xml)}" > #{backup_dir}/vm.xml
+
+                # --------------------------------
+                # Create snapshots for disks
+                # --------------------------------
+                #{freeze}
+
+                #{snap_cmd}
+
+                #{thaw}
+
+                # --------------------------
+                # export, convert & cleanup
+                # --------------------------
+                #{expo_cmd}
+
+                #{clup_cmd}
+            EOS
+        end
+
+    end
 
     # This class includes methods manage backup images
     class BackupImage
 
-        attr_reader :vm_id, :keep_last, :bj_id
+        attr_reader :vm_id, :keep_last, :bj_id, :format
 
         # Given a sorted list of qcow2 files,
         # return a shell recipe that reconstructs the backing chain in-place.
@@ -91,6 +157,33 @@ module TransferManager
 
             script.join("\n")
         end
+
+        # Given a sorted list of qcow2 files with backing chain properly reconstructed,
+        # return a shell recipe that commits all increments to the base image.
+        # rubocop:disable Style/ParallelAssignment, Layout/LineLength
+        def self.commit_chain(paths, opts = {})
+            return '' unless paths.size > 1
+
+            opts = {
+                :workdir  => nil,
+                :sparsify => false
+            }.merge!(opts)
+
+            firstdir, firstbase = File.split(paths.first)
+            first = "#{opts[:workdir] || firstdir}/#{firstbase}"
+
+            lastdir, lastbase = File.split(paths.last)
+            last = "#{opts[:workdir] || lastdir}/#{lastbase}"
+
+            script = []
+            script << "qemu-img commit -f qcow2 -b '#{first}' '#{last}'"
+
+            if opts[:sparsify]
+                script << "[ $(type -P virt-sparsify) ] && virt-sparsify -q --in-place '#{first}'"
+            end
+
+            script.join("\n")
+        end
         # rubocop:enable Style/ParallelAssignment, Layout/LineLength
 
         def initialize(action_xml)
@@ -116,6 +209,18 @@ module TransferManager
             @keep_last = @action.elements['/DS_DRIVER_ACTION_DATA/EXTRA_DATA/KEEP_LAST']&.text.to_i
 
             @incr_id = @action.elements['/DS_DRIVER_ACTION_DATA/TEMPLATE/INCREMENT_ID']&.text.to_i
+
+            @format = @action.elements["#{prefix}/FORMAT"]&.text
+        end
+
+        # Returns the backup protocol to use (e.g. rsync, restic+rbd) based
+        # on backup format
+        def proto(base)
+            if @format == 'rbd'
+                "#{base}+rbd"
+            else
+                base
+            end
         end
 
         def last
@@ -174,9 +279,9 @@ module TransferManager
 
         DISK_LIST = ['ALLOW_ORPHANS', 'CLONE', 'CLONE_TARGET', 'CLUSTER_ID', 'DATASTORE',
                      'DATASTORE_ID', 'DISK_SNAPSHOT_TOTAL_SIZE', 'DISK_TYPE', 'DRIVER',
-                     'IMAGE', 'IMAGE_ID', 'IMAGE_STATE', 'IMAGE_UID', 'IMAGE_UNAME',
+                     'IMAGE', 'IMAGE_STATE', 'IMAGE_UID', 'IMAGE_UNAME',
                      'LN_TARGET', 'OPENNEBULA_MANAGED', 'ORIGINAL_SIZE', 'PERSISTENT',
-                     'READONLY', 'SAVE', 'SIZE', 'SOURCE', 'TARGET', 'TM_MAD', 'TYPE', 'FORMAT']
+                     'READONLY', 'SAVE', 'SOURCE', 'TARGET', 'TM_MAD', 'FORMAT']
 
         NIC_LIST = ['AR_ID', 'BRIDGE', 'BRIDGE_TYPE', 'CLUSTER_ID', 'NAME', 'NETWORK_ID', 'NIC_ID',
                     'TARGET', 'VLAN_ID', 'VN_MAD', 'VLAN_TAGGED_ID', 'PHYDEV']
@@ -334,10 +439,24 @@ module TransferManager
 
             disks.each do |d|
                 id = d['DISK_ID']
+                type = d['TYPE'].upcase
                 next unless id
-                next unless bck_disks[id]
 
                 d.delete('DISK_ID')
+
+                if type == 'FS'
+                    # Volatile disk
+                    d.delete('IMAGE_ID')
+
+                    # If not included in backup, keep TYPE and SIZE to create new volatile disk
+                    next unless bck_disks[id]
+                end
+
+                d.delete('TYPE')
+                d.delete('SIZE')
+
+                # CDROM keeps original image_id
+                next if ['CDROM', 'RBD_CDROM'].include?(type)
 
                 d['IMAGE_ID'] = bck_disks[id][:image_id].to_s
             end

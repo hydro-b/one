@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -204,10 +204,7 @@ int VirtualRouter::get_network_leases(string& estr) const
     {
         VirtualMachineNic nic(nics[i], i);
 
-        std::string net_mode = nic.vector_value("NETWORK_MODE");
-        one_util::toupper(net_mode);
-
-        if (net_mode == "AUTO")
+        if (nic.is_auto())
         {
             estr = "Virtual Router is incompatible with auto mode";
             return -1;

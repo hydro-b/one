@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -32,10 +32,7 @@ using namespace std;
 /* -------------------------------------------------------------------------- */
 
 ObjectXML::ObjectXML(const std::string &xml_doc)
-    : paths(nullptr)
-    , num_paths(0)
-    , xml(nullptr)
-    , ctx(nullptr)
+    : xml(nullptr), ctx(nullptr)
 {
     try
     {
@@ -51,9 +48,7 @@ ObjectXML::ObjectXML(const std::string &xml_doc)
 /* -------------------------------------------------------------------------- */
 
 ObjectXML::ObjectXML(const xmlNodePtr node)
-    : paths(0)
-    , num_paths(0)
-    , xml(xmlNewDoc(reinterpret_cast<const xmlChar *>("1.0")))
+    : xml(xmlNewDoc(reinterpret_cast<const xmlChar *>("1.0")))
     , ctx(0)
 {
     if (xml == 0)
@@ -126,7 +121,7 @@ void ObjectXML::xpaths(std::vector<std::string>& content, const char * expr)
         case XPATH_NODESET:
             if (obj->nodesetval == 0)
             {
-                return;
+                break;
             }
 
             for(int i = 0; i < obj->nodesetval->nodeNr ; ++i)

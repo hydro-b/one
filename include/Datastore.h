@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -72,7 +72,7 @@ public:
     enum DatastoreState
     {
         READY     = 0, /** < Datastore ready to use */
-        DISABLED  = 1  /** < System Datastore can not be used */
+        DISABLED  = 1  /** < System Datastore cannot be used */
     };
 
     /**
@@ -223,6 +223,15 @@ public:
      */
     bool get_avail_mb(long long &avail) const;
 
+
+    /**
+     *  @return true if the datastored has been monitored
+     */
+    bool is_monitored()
+    {
+        return (free_mb != 0 || total_mb != 0 || used_mb != 0);
+    }
+
     /**
      * Returns true if the DS contains the SHARED = YES attribute
      * @return true if the DS is shared
@@ -249,6 +258,14 @@ public:
      * @return true if the DS_MAD_CONF has CONCURRENT_FORGET = "YES" flag
      */
     bool is_concurrent_forget() const;
+
+    /**
+     * @return true if the datastore is enabled (only for system ds)
+     */
+    bool is_enabled() const
+    {
+        return state == READY;
+    };
 
     /**
      * Enable or disable the DS. Only for System DS.
@@ -444,7 +461,7 @@ private:
      *    @return 0 on success
      * - encrypt secret attributes.
      */
-    int post_update_template(std::string& error) override;
+    int post_update_template(std::string& error, Template *old_tmp) override;
 };
 
 #endif /*DATASTORE_H_*/

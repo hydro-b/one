@@ -1,6 +1,6 @@
 #!/usr/bin/ruby
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -87,7 +87,7 @@ class VirtualMachineDB
 
         if sync_state then
             status_str = "SYNC_STATE=yes\nMISSING_STATE=#{@conf[:missing_state]}\n"
-            
+
             @db.execute("REPLACE INTO #{@settings} VALUES ('LAST_SYNC', #{time.to_s})")
         end
 
@@ -98,6 +98,7 @@ class VirtualMachineDB
         # ----------------------------------------------------------------------
         vms.each do |uuid, vm|
             next if vm[:ignore] == true
+            next if vm[:id].to_i < 0 # Skip wild VMs
 
             if vm[:id] == -1
                 filter = "WHERE uuid = '#{uuid}'"
@@ -124,7 +125,7 @@ class VirtualMachineDB
                 )
 
                 status_str << vm_to_status(vm)
-                
+
                 next
             end
 
@@ -165,7 +166,7 @@ class VirtualMachineDB
                 @db.execute("DELETE FROM #{@dataset} WHERE uuid = \"#{uuid}\"")
             else
                 status_str << vm_db_to_status(vm_db) if sync_state
-                
+
                 @db.execute(
                     "UPDATE #{@dataset} SET " \
                     "timestamp = #{time}, " \

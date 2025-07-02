@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -15,6 +15,24 @@
 # See the License for the specific language governing permissions and        #
 # limitations under the License.                                             #
 #--------------------------------------------------------------------------- #
+
+ONE_LOCATION = ENV['ONE_LOCATION'] unless defined?(ONE_LOCATION)
+
+if !ONE_LOCATION
+    LIB_LOCATION      ||= '/usr/lib/one'
+    RUBY_LIB_LOCATION ||= '/usr/lib/one/ruby'
+    GEMS_LOCATION     ||= '/usr/share/one/gems'
+else
+    LIB_LOCATION      ||= ONE_LOCATION + '/lib'
+    RUBY_LIB_LOCATION ||= ONE_LOCATION + '/lib/ruby'
+    GEMS_LOCATION     ||= ONE_LOCATION + '/share/gems'
+end
+
+# %%RUBYGEMS_SETUP_BEGIN%%
+require 'load_opennebula_paths'
+# %%RUBYGEMS_SETUP_END%%
+
+$LOAD_PATH << RUBY_LIB_LOCATION
 
 require 'json'
 require 'open3'
@@ -533,6 +551,14 @@ class KVMDomain
         @frozen = nil
     end
 
+    # Check if the TM driver is in shared storage
+    #   @param disk [REXML::Element] of the disk
+    #
+    #   @return [Boolean] true if local storage is used
+    def disk_local?(disk)
+        ['SSH', 'LOCAL'].include? disk.elements['TM_MAD'].text.upcase
+    end
+
     #---------------------------------------------------------------------------
     # List the checkpoints defined in the domain
     #    @return[Array]  an array of checkpint ids
@@ -726,8 +752,8 @@ class KVMDomain
         @vm.elements.each 'TEMPLATE/DISK' do |d|
             did = d.elements['DISK_ID'].text
             tgt = d.elements['TARGET'].text
-            per = d.elements['SAVE'].text.casecmp('YES') == 0
-            ssh = d.elements['TM_MAD'].text.casecmp('SSH') == 0
+            per = d.elements['SAVE'].nil? ? false : d.elements['SAVE'].text.casecmp('YES') == 0
+            ssh = disk_local? d
 
             next unless disks.include? did
 
@@ -798,10 +824,13 @@ class KVMDomain
         @vm.elements.each 'TEMPLATE/DISK' do |d|
             did = d.elements['DISK_ID'].text
             tgt = d.elements['TARGET'].text
-            per = d.elements['SAVE'].text.casecmp('YES') == 0
-            ssh = d.elements['TM_MAD'].text.casecmp('SSH') == 0
+            per = d.elements['SAVE'].nil? ? false : d.elements['SAVE'].text.casecmp('YES') == 0
+            ssh = disk_local? d
 
-            next unless disks.include? did
+            unless disks.include? did
+                dspec << "#{tgt},snapshot=no"
+                next
+            end
 
             disk_path = "#{@vm_dir}/disk.#{did}"
             disk_opts = {
@@ -941,8 +970,8 @@ class KVMDomain
 
         @vm.elements.each 'TEMPLATE/DISK' do |d|
             did = d.elements['DISK_ID'].text
-            per = d.elements['SAVE'].text.casecmp('YES') == 0
-            ssh = d.elements['TM_MAD'].text.casecmp('SSH') == 0
+            per = d.elements['SAVE'].nil? ? false : d.elements['SAVE'].text.casecmp('YES') == 0
+            ssh = disk_local? d
 
             next unless disks.include? did
 
@@ -1028,8 +1057,8 @@ class KVMDomain
 
         @vm.elements.each 'TEMPLATE/DISK' do |d|
             did = d.elements['DISK_ID'].text
-            per = d.elements['SAVE'].text.casecmp('YES') == 0
-            ssh = d.elements['TM_MAD'].text.casecmp('SSH') == 0
+            per = d.elements['SAVE'].nil? ? false : d.elements['SAVE'].text.casecmp('YES') == 0
+            ssh = disk_local? d
 
             next unless disks.include? did
 

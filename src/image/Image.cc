@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -45,6 +45,7 @@ Image::Image(int             _uid,
     type(OS),
     disk_type(FILE),
     regtime(time(0)),
+    modtime(time(0)),
     source(""),
     path(""),
     format(""),
@@ -416,6 +417,7 @@ string& Image::to_xml(string& xml) const
         "<DISK_TYPE>"      << disk_type       << "</DISK_TYPE>"   <<
         "<PERSISTENT>"     << persistent_img  << "</PERSISTENT>"  <<
         "<REGTIME>"        << regtime         << "</REGTIME>"     <<
+        "<MODTIME>"        << modtime         << "</MODTIME>"     <<
         "<SOURCE>"         << one_util::escape_xml(source) << "</SOURCE>" <<
         "<PATH>"           << one_util::escape_xml(path)   << "</PATH>"   <<
         "<FORMAT>"         << one_util::escape_xml(format) << "</FORMAT>" <<
@@ -473,6 +475,7 @@ int Image::from_xml(const string& xml)
     rc += xpath(int_disk_type,   "/IMAGE/DISK_TYPE", 0);
     rc += xpath(persistent_img,  "/IMAGE/PERSISTENT", 0);
     rc += xpath<time_t>(regtime, "/IMAGE/REGTIME",   0);
+    rc += xpath<time_t>(modtime, "/IMAGE/MODTIME",   0);
     rc += xpath(format,          "/IMAGE/FORMAT",   "");
 
     rc += xpath<long long>(size_mb, "/IMAGE/SIZE", 0);
@@ -740,7 +743,7 @@ void Image::disk_attribute(VirtualMachineDisk *    disk,
 
             for (const auto& val : values)
             {
-                string current_val = disk->vector_value(val.first);
+                const string& current_val = disk->vector_value(val.first);
 
                 if (current_val.empty() && !val.second.empty())
                 {
@@ -751,7 +754,7 @@ void Image::disk_attribute(VirtualMachineDisk *    disk,
         else
         {
             // Simple attribute, inherit value
-            string current_val = disk->vector_value(inherit);
+            const string& current_val = disk->vector_value(inherit);
             PoolObjectSQL::get_template_attribute(inherit, inherit_val);
 
             if (current_val.empty() && !inherit_val.empty())
@@ -827,7 +830,6 @@ std::unique_ptr<ImageTemplate> Image::clone_template(const string& new_name) con
     tmpl->replace("PATH",   source);
     tmpl->replace("FORMAT", format);
     tmpl->replace("SIZE",   size_mb);
-    tmpl->erase("VCENTER_IMPORTED");
 
     if ( is_persistent() )
     {
@@ -1158,13 +1160,32 @@ void Image::revert_snapshot(int snap_id, Template& ds_quotas)
     snapshots.active_snapshot(snap_id, true);
 
     auto snap_size = snapshots.snapshot_size(snap_id);
+    long long delta_size = 0;
 
     if (snap_size != get_size())
     {
+        delta_size = get_size() - snap_size;
+
         ds_quotas.add("DATASTORE", get_ds_id());
-        ds_quotas.add("SIZE", get_size() - snap_size);
+        ds_quotas.add("SIZE", delta_size);
         ds_quotas.add("IMAGES", 0);
 
         set_size(snap_size);
+    }
+
+    if (snapshots.orphans_mode() == Snapshots::LINEAR)
+    {
+        auto youngers = snapshots.get_younger_snapshots(snap_id);
+
+        for (auto i : youngers)
+        {
+            delta_size += snapshots.snapshot_size(i);
+
+            snapshots.delete_snapshot(i);
+
+            ds_quotas.replace("DATASTORE", get_ds_id());
+            ds_quotas.replace("SIZE", delta_size);
+            ds_quotas.replace("IMAGES", 0);
+        }
     }
 }

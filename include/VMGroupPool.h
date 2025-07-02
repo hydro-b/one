@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -63,6 +63,11 @@ public:
     std::unique_ptr<VMGroup> get(int oid)
     {
         return PoolSQL::get<VMGroup>(oid);
+    }
+
+    std::unique_ptr<VMGroup> get_ro(int oid)
+    {
+        return PoolSQL::get_ro<VMGroup>(oid);
     }
 
     /**

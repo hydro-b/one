@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -141,6 +141,16 @@ public:
         rc += vector_value("FLOATING_ONLY", only);
 
         return rc == 0 && floating && only;
+    }
+
+    /**
+     *  Check if the NIC uses auto mode
+     */
+    bool is_auto() const
+    {
+        std::string net_mode = vector_value("NETWORK_MODE");
+
+        return one_util::icasecmp(net_mode, "AUTO");
     }
 
     /*
@@ -360,6 +370,13 @@ public:
      */
     void get_security_groups(std::set<int>& sgs);
 
+    /**
+     * Returns a set of the NIC IDs that uses NETWORK_MODE auto
+     *     @param ids a set of NIC IDs
+     *     @return the number of ids in the set
+     */
+    int get_auto_nics(std::set<int>& ids);
+
     /* ---------------------------------------------------------------------- */
     /* Network Manager Interface                                              */
     /* ---------------------------------------------------------------------- */
@@ -373,7 +390,7 @@ public:
      *  @param error_str Returns the error reason, if any
      *  @return 0 if success
      */
-    int get_network_leases(int vm_id, int uid, std::vector<Attribute *> nics,
+    int get_network_leases(int vm_id, int uid, std::vector<Attribute *>& nics,
                            VectorAttribute * nic_default, std::vector<VectorAttribute *>& sgs,
                            std::string& estr);
 
@@ -437,7 +454,7 @@ public:
 protected:
 
     VirtualMachineAttribute * attribute_factory(VectorAttribute * va,
-                                                int id) const
+                                                int id) const override
     {
         return new VirtualMachineNic(va, id);
     };

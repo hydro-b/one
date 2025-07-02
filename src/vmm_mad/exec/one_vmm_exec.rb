@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -33,23 +33,7 @@ else
 end
 
 # %%RUBYGEMS_SETUP_BEGIN%%
-if File.directory?(GEMS_LOCATION)
-    real_gems_path = File.realpath(GEMS_LOCATION)
-    if !defined?(Gem) || Gem.path != [real_gems_path]
-        $LOAD_PATH.reject! {|l| l =~ /vendor_ruby/ }
-
-        # Suppress warnings from Rubygems
-        # https://github.com/OpenNebula/one/issues/5379
-        begin
-            verb = $VERBOSE
-            $VERBOSE = nil
-            require 'rubygems'
-            Gem.use_paths(real_gems_path)
-        ensure
-            $VERBOSE = verb
-        end
-    end
-end
+require 'load_opennebula_paths'
 # %%RUBYGEMS_SETUP_END%%
 
 $LOAD_PATH << RUBY_LIB_LOCATION
@@ -1203,11 +1187,17 @@ class ExecDriver < VirtualMachineDriver
         # Check that live snapshot is supported
         vmm_driver_path = 'VM/HISTORY_RECORDS/HISTORY/VM_MAD'
         tm_driver_path  = "VM/TEMPLATE/DISK[DISK_SNAPSHOT_ACTIVE='YES']/TM_MAD"
+        lvm_thin_enabled_path = "VM/TEMPLATE/DISK[DISK_SNAPSHOT_ACTIVE='YES']/LVM_THIN_ENABLE"
 
         vmm_driver = ensure_xpath(xml_data, id, action,
                                   vmm_driver_path) || return
         tm_driver  = ensure_xpath(xml_data, id, action,
                                   tm_driver_path) || return
+        lvm_thin_enable = xml_data.elements[lvm_thin_enabled_path]&.text&.strip
+
+        if tm_driver == 'fs_lvm_ssh' && lvm_thin_enable&.downcase == 'yes'
+            tm_driver = 'lvm_thin'
+        end
 
         if !LIVE_DISK_SNAPSHOTS.include?("#{vmm_driver}-#{tm_driver}")
             send_message(action, RESULT[:failure], id,
@@ -1373,7 +1363,12 @@ class ExecDriver < VirtualMachineDriver
                 :driver       => :ds,
                 :action       => :backup,
                 :parameters   => ds_command,
-                :stdin        => xml_data.elements['DATASTORE'].to_s,
+                :stdin        => <<~EOF,
+                    <DS_DRIVER_ACTION_DATA>
+                      #{xml_data.elements['DATASTORE']}
+                      #{vm_xml}
+                    </DS_DRIVER_ACTION_DATA>
+                EOF
                 :fail_actions => cleanup_steps
             }
         ] + cleanup_steps
@@ -1451,33 +1446,6 @@ class ExecDriver < VirtualMachineDriver
         }
 
         steps = [reboot_step]
-
-        if @hypervisor == 'lxd'
-            steps += [
-                {
-                    :driver     => :vnm,
-                    :action     => :clean,
-                    :parameters => [:host]
-                },
-                {
-                    :driver   => :vnm,
-                    :action   => :pre
-                },
-                reboot_step,
-                {
-                    :driver       => :vnm,
-                    :action       => :post,
-                    :parameters   => [:deploy_id, :host],
-                    :fail_actions => [
-                        {
-                            :driver     => :vmm,
-                            :action     => :cancel,
-                            :parameters => [:deploy_id, :host]
-                        }
-                    ]
-                }
-            ]
-        end
 
         action.run(steps)
     end

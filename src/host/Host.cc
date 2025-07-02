@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -51,6 +51,18 @@ Host::Host(
 
     replace_template_attribute("IM_MAD", im_mad_name);
     replace_template_attribute("VM_MAD", vmm_mad_name);
+
+    //-------------------- Init search xpath routes ---------------------------
+    ObjectXML::paths =
+    {
+        "/HOST/TEMPLATE/",
+        "/HOST/HOST_SHARE/",
+        "/HOST/HOST_SHARE/DATASTORES/",
+        "/HOST/MONITORING/CAPACITY/",
+        "/HOST/MONITORING/SYSTEM/",
+        "/HOST/",
+        "/HOST/CLUSTER_TEMPLATE/"
+    };
 }
 
 /* ------------------------------------------------------------------------ */
@@ -181,31 +193,27 @@ int Host::update_info(Template &tmpl)
     update_wilds();
 
     // Update host_share
-    long long total_cpu, total_mem;
+    HostShareConf hconf = {-1, -1, "", "", "", ""};
 
-    obj_template->get("TOTALCPU", total_cpu);
-    obj_template->get("TOTALMEMORY", total_mem);
+    obj_template->get("TOTALCPU", hconf.total_cpu);
+    obj_template->get("TOTALMEMORY", hconf.total_mem);
 
-    if (host_share.get_total_cpu() == total_cpu &&
-        host_share.get_total_mem() == total_mem)
+    if (host_share.get_total_cpu() == hconf.total_cpu &&
+        host_share.get_total_mem() == hconf.total_mem)
     {
-        // No need to update cpu and memory values
-        obj_template->erase("TOTALCPU");
-        obj_template->erase("TOTALMEMORY");
-
-        host_share.set_monitorization(*obj_template);
+        hconf.total_cpu = -1;
+        hconf.total_mem = -1;
     }
     else
     {
-        // Total memory or cpu has changed, update
-        // reservation (may access cluster object, which is slow)
-        string rcpu;
-        string rmem;
-
-        reserved_capacity(rcpu, rmem);
-
-        host_share.set_monitorization(*obj_template, rcpu, rmem);
+        // Total memory or cpu has changed, update reservation
+        reserved_capacity(hconf.rcpu, hconf.rmem);
     }
+
+    get_hostcluster_attr("PCI_FILTER", hconf.pci_filter);
+    get_hostcluster_attr("PCI_SHORT_ADDRESS", hconf.pci_short_address);
+
+    host_share.set_monitorization(*obj_template, hconf);
 
     return 0;
 }
@@ -273,13 +281,6 @@ void Host::update_wilds()
             continue;
         }
 
-        if (vmid == -1) //Check if it is an imported
-        {
-            VirtualMachinePool * vmpool = Nebula::instance().get_vmpool();
-
-            vmid = vmpool->get_vmid(vatt->vector_value("DEPLOY_ID"));
-        }
-
         if (vmid == -1)
         {
             if (num_wilds++ > 0)
@@ -310,6 +311,29 @@ void Host::update_wilds()
         add_template_attribute("WILDS", wild.str());
     }
 }
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+
+Cluster* Host::get_cluster() const
+{
+    if (cluster_obj != nullptr)
+    {
+        return cluster_obj.get();
+    }
+
+    if (cluster_id == -1)
+    {
+        return nullptr;
+    }
+
+    auto cpool = Nebula::instance().get_clpool();
+
+    cluster_obj = cpool->get_ro(cluster_id);
+
+    return cluster_obj.get();
+}
+
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
@@ -370,18 +394,6 @@ void Host::error(const string& message)
     set_template_error_message(oss.str());
 }
 
-/* ------------------------------------------------------------------------ */
-/* ------------------------------------------------------------------------ */
-
-bool Host::is_public_cloud() const
-{
-    bool is_public_cloud = false;
-
-    get_template_attribute("PUBLIC_CLOUD", is_public_cloud);
-
-    return is_public_cloud;
-}
-
 /* ************************************************************************ */
 /* Host :: Misc                                                             */
 /* ************************************************************************ */
@@ -407,8 +419,14 @@ string& Host::to_xml(string& xml) const
         host_share.to_xml(share_xml)  <<
         vm_collection.to_xml(vm_collection_xml) <<
         obj_template->to_xml(template_xml) <<
-        monitoring.to_xml() <<
-        "</HOST>";
+        monitoring.to_xml();
+
+    if (!cluster_template_xml.empty())
+    {
+        oss << "<CLUSTER_TEMPLATE>" << cluster_template_xml << "</CLUSTER_TEMPLATE>";
+    }
+
+    oss << "</HOST>";
 
     xml = oss.str();
 
@@ -488,6 +506,23 @@ int Host::from_xml(const string& xml)
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
+void Host::get_hostcluster_attr(const std::string& name, std::string& value) const
+{
+    get_template_attribute(name, value);
+
+    if (!value.empty() || cluster_id == -1)
+    {
+        return;
+    }
+
+    if (auto cluster = get_cluster())
+    {
+        cluster->get_template_attribute(name, value);
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+
 void Host::reserved_capacity(string& rcpu, string& rmem) const
 {
     get_template_attribute("RESERVED_CPU", rcpu);
@@ -501,14 +536,9 @@ void Host::reserved_capacity(string& rcpu, string& rmem) const
     string cluster_rcpu = "";
     string cluster_rmem = "";
 
-    if (cluster_id != -1)
+    if (auto cluster = get_cluster())
     {
-        auto cpool = Nebula::instance().get_clpool();
-
-        if (auto cluster = cpool->get_ro(cluster_id))
-        {
-            cluster->get_reserved_capacity(cluster_rcpu, cluster_rmem);
-        }
+        cluster->get_reserved_capacity(cluster_rcpu, cluster_rmem);
     }
 
     if (rcpu.empty())
@@ -557,7 +587,7 @@ bool Host::update_reserved_capacity(const string& ccpu, const string& cmem)
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
-int Host::post_update_template(string& error)
+int Host::post_update_template(string& error, Template *_old_tmpl)
 {
     string new_im_mad;
     string new_vm_mad;
@@ -596,3 +626,45 @@ void Host::load_monitoring()
     auto hpool = Nebula::instance().get_hpool();
     monitoring = hpool->get_monitoring(oid);
 }
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+
+bool Host::is_pinned() const
+{
+    string pin_policy;
+
+    obj_template->get("PIN_POLICY", pin_policy);
+
+    return one_util::tolower(pin_policy) == "pinned";
+}
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+
+bool Host::add_pci(HostShareCapacity &sr)
+{
+    get_hostcluster_attr("PCI_GPU_PROFILE", sr.vgpu_profile);
+
+    return host_share.add_pci(sr);
+}
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+
+void Host::add_capacity(HostShareCapacity &sr)
+{
+    get_hostcluster_attr("PCI_GPU_PROFILE", sr.vgpu_profile);
+
+    if ( vm_collection.add(sr.vmid) == 0 )
+    {
+        host_share.add(sr);
+    }
+    else
+    {
+        std::ostringstream oss;
+        oss << "VM " << sr.vmid << " is already in host " << oid << ".";
+
+        NebulaLog::log("ONE", Log::ERROR, oss);
+    }
+};

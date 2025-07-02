@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -16,7 +16,7 @@
 package keys
 
 // Available template parts and keys are listed here: https://docs.opennebula.io/5.8/operation/references/template.html
-// Some specific part are not defined: vCenter, Public Cloud, Hypervisor, User Inputs
+// Some specific part are not defined: Public Cloud, Hypervisor, User Inputs
 
 // Template is a type used to enumerate VM generic keys
 type Template string
@@ -51,16 +51,20 @@ type OS string
 const (
 	OSVec string = "OS"
 
-	Arch       OS = "ARCH"
-	Machine    OS = "MACHINE"
-	Kernel     OS = "KERNEL"
-	KernelDS   OS = "KERNEL_DS"
-	Initrd     OS = "INITRD"
-	InitrdDS   OS = "INITRD_DS"
-	Root       OS = "ROOT"
-	KernelCmd  OS = "KERNEL_CMD"
-	Bootloader OS = "BOOTLOADER"
-	Boot       OS = "BOOT"
+	Arch           OS = "ARCH"
+	Machine        OS = "MACHINE"
+	Kernel         OS = "KERNEL"
+	KernelDS       OS = "KERNEL_DS"
+	Initrd         OS = "INITRD"
+	InitrdDS       OS = "INITRD_DS"
+	Root           OS = "ROOT"
+	KernelCmd      OS = "KERNEL_CMD"
+	Bootloader     OS = "BOOTLOADER"
+	Boot           OS = "BOOT"
+	SDDiskBus      OS = "SD_DISK_BUS"
+	UUID           OS = "UUID"
+	Firmware       OS = "FIRMWARE"
+	FirmwareSecure OS = "FIRMWARE_SECURE"
 )
 
 // CPUModel define keys for the VM CPU model

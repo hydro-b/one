@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -38,7 +38,6 @@ module OpenNebula::ServiceTemplateExt
             # @param market_id [Integer] Marketplace ID to import app
             # @param name      [String]  Service Template App name
             def mp_import(templates, market_id, name)
-                template = ''
                 name   ||= "#{@body['name']}-#{SecureRandom.hex[0..9]}"
 
                 template = <<-EOT
@@ -52,7 +51,7 @@ module OpenNebula::ServiceTemplateExt
                 @body['roles'].each do |role|
                     # Find role template into templates to get the name to use
                     t = templates.find do |_, v|
-                        v[:template]['ID'].to_i == role['vm_template']
+                        v[:template]['ID'].to_i == role['template_id']
                     end
 
                     next if t.nil? || t[1].nil? || t[1][:name].nil?
@@ -63,7 +62,7 @@ module OpenNebula::ServiceTemplateExt
                     ROLE = [ NAME="#{role['name']}", APP="#{app_name}"]
                     EOT
 
-                    role.delete('vm_template')
+                    role.delete('template_id')
                 end
 
                 xml = MarketPlaceApp.build_xml

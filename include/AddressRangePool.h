@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -88,7 +88,7 @@ public:
      *    release the pointer.
      *    @return 0 on success
      */
-    int update_ar(std::vector<VectorAttribute *> ars, bool keep_restricted,
+    int update_ar(const std::vector<VectorAttribute *>& ars, bool keep_restricted,
                   std::set<int>& update_ids, std::unique_ptr<VectorAttribute>& update_attr,
                   std::string& error_msg);
     /**

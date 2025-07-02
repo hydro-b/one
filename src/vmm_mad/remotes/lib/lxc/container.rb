@@ -1,7 +1,7 @@
 #!/usr/bin/ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -141,7 +141,10 @@ class Container
             return false
         end
 
-        wait_deploy(5)
+        return true if wait_deploy(5)
+
+        clean(true)
+        return false
     end
 
     def shutdown
@@ -196,8 +199,11 @@ class Container
     def wait_deploy(timeout)
         t_start = Time.now
 
-        next while (Time.now - t_start < timeout) && !running?
+        sleep(0.1) while (Time.now - t_start < timeout) && !running?
 
+        # Container can power off right away after starting due to init problems
+        # Ensure it remains running
+        sleep(1)
         running?
     end
 
@@ -211,7 +217,7 @@ class Container
 
         return true if rc.zero?
 
-        OpenNebula.log_error "#{__method__}: #{e}"
+        OpenNebula::DriverLogger.log_error "#{__method__}: #{e}"
         false
     end
 

@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -35,7 +35,8 @@ func createServiceTemplate(t *testing.T) (*srv_tmpl.ServiceTemplate, int) {
 					{
 						Name: "master",
 						Cardinality: 1,
-						VMTemplate: vmtmpl_id,
+						Type: "vm",
+						TemplateID: vmtmpl_id,
 						MinVMs: 1,
 					},
 				},
@@ -115,6 +116,8 @@ func TestServiceTemplate(t *testing.T) {
 				Roles: []srv_tmpl.Role {
 					{
 						Name: "masterRenamed",
+						Type: "vm",
+						TemplateID: tmpl_id,
 					},
 				},
 			},

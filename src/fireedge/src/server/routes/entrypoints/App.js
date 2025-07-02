@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -16,36 +16,36 @@
 // eslint-disable-next-line node/no-deprecated-api
 const { parse } = require('url')
 const { Router } = require('express')
-const { renderToString } = require('react-dom/server')
-const root = require('window-or-global')
-const { createStore, compose, applyMiddleware } = require('redux')
-const thunk = require('redux-thunk').default
 const { ServerStyleSheets } = require('@mui/styles')
 const { request: axios } = require('axios')
 const { writeInLogger } = require('server/utils/logger')
-const { MissingRemoteHeaderError } = require('server/utils/errors')
+const { MissingHeaderError } = require('server/utils/errors')
 
 // server
-const {
-  getSunstoneConfig,
-  getProvisionConfig,
-  getFireedgeConfig,
-} = require('server/utils/yml')
+const { getSunstoneConfig, getFireedgeConfig } = require('server/utils/yml')
+
+const { getRemotesConfig } = require('server/utils/remoteModules')
+const { getForecastConfig } = require('server/utils/config')
 
 const { getEncodedFavicon } = require('server/utils/logo')
 const {
   defaultApps,
   defaultAppName,
   defaultHeaderRemote,
+  defaultHeaderx509,
   defaultApiTimeout,
+  defaultProtocol,
+  defaultIP,
+  defaultPort,
+  httpMethod,
 } = require('server/utils/constants/defaults')
 
-// client
-const rootReducer = require('client/store/reducers')
-const { upperCaseFirst } = require('client/utils')
-const { APP_URL, STATIC_FILES_URL } = require('client/constants')
-
 const APP_NAMES = Object.keys(defaultApps)
+const APP_URL = '/fireedge'
+const STATIC_FILES_URL = `${APP_URL}/client/assets`
+
+const upperCaseFirst = (input) =>
+  input?.charAt(0)?.toUpperCase() + input.substring(1)
 
 const ensuredScriptValue = (value) =>
   JSON.stringify(value).replace(/</g, '\\u003c')
@@ -60,13 +60,12 @@ const router = Router()
 const defaultConfig = {
   currentTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
 }
+const { POST } = httpMethod
 
 router.get('*', async (req, res) => {
   const remoteJWT = {}
 
   const APP_CONFIG = {
-    [defaultApps.provision.name]:
-      { ...defaultConfig, ...getProvisionConfig() } || defaultConfig,
     [defaultApps.sunstone.name]:
       {
         ...defaultConfig,
@@ -77,29 +76,47 @@ router.get('*', async (req, res) => {
   const encodedFavIcon = await getEncodedFavicon()
 
   const appConfig = getFireedgeConfig()
-  if (appConfig?.auth === 'remote') {
+  const remotesConfig = getRemotesConfig()
+  const forecastConfig = getForecastConfig()
+  const authType = appConfig?.auth
+  const validAuthTypes = ['remote', 'x509']
+
+  if (validAuthTypes.includes(authType)) {
     remoteJWT.remote = true
     remoteJWT.remoteRedirect = appConfig?.auth_redirect ?? '.'
 
     const finderHeader = () => {
       const headers = Object.keys(req.headers)
 
-      return headers.find((header) => defaultHeaderRemote.includes(header))
+      switch (authType) {
+        case validAuthTypes[1]:
+          return headers.find((header) => defaultHeaderx509.includes(header))
+        default:
+          return headers.find((header) => defaultHeaderRemote.includes(header))
+      }
     }
+
     const findHeader = finderHeader()
     try {
       if (!findHeader) {
-        throw new MissingRemoteHeaderError(JSON.stringify(req.headers))
+        throw new MissingHeaderError(JSON.stringify(req.headers))
       }
+
       const remoteUser = req.get(findHeader)
-      const jwt = await axios({
-        method: 'POST',
-        url: `${req.protocol}://${req.get('host')}/${defaultAppName}/api/auth`,
+
+      const paramsAxios = {
+        method: POST,
+        url: `${defaultProtocol}://${defaultIP}:${
+          appConfig.port || defaultPort
+        }/${defaultAppName}/api/auth`,
         data: {
-          user: req.get(findHeader),
+          user: remoteUser,
         },
         validateStatus: (status) => status >= 200 && status <= 400,
-      })
+      }
+
+      const jwt = await axios(paramsAxios)
+
       if (!global.remoteUsers) {
         global.remoteUsers = {}
       }
@@ -119,26 +136,11 @@ router.get('*', async (req, res) => {
     .pathname.split(/\//gi)
     .filter((sub) => sub?.length > 0)
     .find((resource) => APP_NAMES.includes(resource))
-
   const sheets = new ServerStyleSheets()
-  const composeEnhancer =
-    (root && root.__REDUX_DEVTOOLS_EXTENSION_COMPOSE__) || compose
 
-  // SSR redux store
-  const store = createStore(
-    rootReducer,
-    composeEnhancer(applyMiddleware(thunk))
-  )
+  const PRELOAD_STATE = {}
 
-  const App = require(`../../../client/apps/${appName}/index.js`).default
-
-  const rootComponent = renderToString(
-    sheets.collect(<App location={req.url} store={store} />)
-  )
-
-  const PRELOAD_STATE = { ...(store.getState() || {}) }
-
-  if (appConfig?.default_zone?.id !== 'undefined' && PRELOAD_STATE?.general) {
+  if (appConfig?.default_zone?.id !== undefined && PRELOAD_STATE?.general) {
     PRELOAD_STATE.general = {
       ...PRELOAD_STATE.general,
       ...{
@@ -157,6 +159,16 @@ router.get('*', async (req, res) => {
       <link rel="icon" type="image/png" sizes="32x32" href="${STATIC_FILES_URL}/favicon/${appName}/favicon-32x32.png">
       <link rel="icon" type="image/png" sizes="16x16" href="${STATIC_FILES_URL}/favicon/${appName}/favicon-16x16.png">
     `
+
+  const remoteModules = `
+    <script id="preload-remotes-config">
+      window.__REMOTES_MODULE_CONFIG__ = ${JSON.stringify(remotesConfig)}
+    </script>`
+
+  const forecastConf = `
+    <script id="preload-forecast-config">
+      window.__FORECAST_CONFIG__ = ${JSON.stringify(forecastConfig)}
+    </script>`
 
   const config = `
     <script id="preload-server-side">
@@ -188,10 +200,12 @@ router.get('*', async (req, res) => {
       ${css}
     </head>
     <body>
-      <div id="root">${rootComponent}</div>
+      <div id="root"/>
       ${storeRender}
       ${config}
       ${requestTimeOut}
+      ${remoteModules}
+      ${forecastConf}
       <script src='${APP_URL}/client/bundle.${appName}.js'></script>
     </body>
     </html>

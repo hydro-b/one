@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -886,6 +886,7 @@ void VirtualMachineManager::_backup(unique_ptr<vm_msg_t> msg)
     {
         string backup_id;
         string backup_size;
+        string backup_format;
 
         istringstream is(msg->payload());
 
@@ -893,11 +894,18 @@ void VirtualMachineManager::_backup(unique_ptr<vm_msg_t> msg)
 
         is >> backup_size;
 
+        if (!(is >> backup_format)) //Default to raw if not provided by driver
+        {
+            backup_format = "raw";
+        }
+
         if ( auto vm = vmpool->get(id) )
         {
             vm->backups().last_backup_id(backup_id);
 
             vm->backups().last_backup_size(backup_size);
+
+            vm->backups().last_backup_format(backup_format);
 
             vmpool->update(vm.get());
 

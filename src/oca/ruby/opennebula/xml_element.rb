@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -90,7 +90,7 @@ module OpenNebula
             else
                 element=@xml.elements[key.to_s]
 
-                return "" if element && !element.has_text?
+                return '' if element && !element.has_text?
             end
 
             element.text if element
@@ -294,6 +294,8 @@ module OpenNebula
         end
 
         # Returns elements in text form
+        # Known bug: For some older versions of REXML, the xpath expression
+        #            returns more nodes than expected
         # root_element:: _String_ base element
         # indent:: _Boolean_ indents the resulting string, default true
         # xpath_exp:: _String_ filter elements with a XPath

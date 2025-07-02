@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -42,11 +42,9 @@ bool QuotaNetwork::check(PoolObjectSQL::ObjectType otype, Template * tmpl,
 
     for (nic = nics->begin() ; nic != nics->end() ; ++nic)
     {
-        std::string net_mode = (*nic)->vector_value("NETWORK_MODE");
-
         std::string net_id   = (*nic)->vector_value("NETWORK_ID");
 
-        if ( one_util::icasecmp(net_mode, "AUTO") && net_id.empty() )
+        if ( (*nic)->is_auto() && net_id.empty() )
         {
             continue;
         }

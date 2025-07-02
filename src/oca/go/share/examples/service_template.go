@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -42,7 +42,8 @@ func main() {
                             {
                                 Name: "master",
                                 Cardinality: 1,
-                                VMTemplate: 0, //VM Template 0 needs to exists
+                                Type: "vm",
+                                TemplateID: 0, //VM Template 0 needs to exists
                                 MinVMs: 1,
                             },
                         },

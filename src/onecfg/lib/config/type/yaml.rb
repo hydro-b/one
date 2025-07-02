@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -16,6 +16,7 @@
 
 require 'yaml'
 
+# rubocop:disable Lint/ConstantResolution
 # rubocop:disable Style/ClassAndModuleChildren
 module OneCfg::Config::Type
 
@@ -43,6 +44,10 @@ module OneCfg::Config::Type
 
             if Gem::Version.new(Psych.const_get(:VERSION)) >= Gem::Version.new('4.0')
                 @content = YAML.load_file(name, :aliases => true)
+
+                # for backward compatibility with older Psych return `false`
+                # instead of `nil` if the file was empty
+                @content = false if @content.nil?
             else
                 @content = YAML.load_file(name)
             end
@@ -280,8 +285,9 @@ module OneCfg::Config::Type
 
                             if di1 && di2
                                 # skip
+                                # rubocop:disable Lint/void
                                 nil
-
+                                # rubocop:enable Lint/void
                             elsif di1
                                 # delete array item
                                 ret << {
@@ -712,3 +718,4 @@ module OneCfg::Config::Type
 
 end
 # rubocop:enable Style/ClassAndModuleChildren
+# rubocop:enable Lint/ConstantResolution

@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -16,31 +16,22 @@
 
 const appName = 'fireedge'
 const appNameSunstone = 'sunstone'
-const appNameProvision = 'provision'
 const internalSunstonePath = `${appName}/${appNameSunstone}`
-const internalProvisionPath = `${appName}/${appNameProvision}`
 const baseUrl = `${appName ? `/${appName}/` : '/'}`
 const baseUrlWebsockets = 'websockets/'
 const severityPrepend = 'severity_'
 const assetsClient = '/lib/one/fireedge/dist/client'
-const dockerUrl =
-  'https://hub.docker.com/v2/repositories/library/%s/tags/?page_size=100'
 const apps = {
   [appNameSunstone]: {
     theme: appNameSunstone,
     name: appNameSunstone,
     assets: true,
   },
-  [appNameProvision]: {
-    name: appNameProvision,
-    theme: appNameProvision,
-  },
 }
 const default2FAOpennebulaVar = 'TWO_FACTOR_AUTH_SECRET'
 const defaultIp = 'localhost'
 const protocol = 'http'
 const defaults = {
-  dockerUrl,
   defaultTypeCrypto: 'aes-256-cbc',
   /**
    * Empty function.
@@ -60,6 +51,7 @@ const defaults = {
   defaultSizeRotate: '100k',
   defaultAppName: appName,
   defaultHeaderRemote: ['http_x_auth_username', 'x_auth_username'],
+  defaultHeaderx509: ['x-client-dn'],
   defaultConfigErrorMessage: {
     color: 'red',
     message: 'file not found: %s',
@@ -67,14 +59,6 @@ const defaults = {
   defaultFilesWebsockets: {
     hooks: {
       path: `${baseUrl}${baseUrlWebsockets}hooks`,
-      methods: ['GET', 'POST'],
-    },
-    [appNameProvision]: {
-      path: `${baseUrl}${baseUrlWebsockets}${appNameProvision}`,
-      methods: ['GET', 'POST'],
-    },
-    vcenter: {
-      path: `${baseUrl}${baseUrlWebsockets}vcenter`,
       methods: ['GET', 'POST'],
     },
   },
@@ -114,19 +98,12 @@ const defaults = {
     parseAttributeValue: true,
     trimValues: true,
   },
-  defaultCommandProvision: `one${appNameProvision}`,
-  defaultCommandProvisionTemplate: `one${appNameProvision}-template`,
-  defaultCommandProvider: 'oneprovider',
-  defaultCommandVcenter: 'onevcenter',
   defaultCommandVM: 'onevm',
   defaultCommandMarketApp: 'onemarketapp',
-  defaultFolderTmpProvision: 'tmp',
   defaultHideCredentials: true,
   defaultHideCredentialReplacer: '****',
   defaultOneFlowServer: `${protocol}://${defaultIp}:2474`,
   defaultSunstonePath: internalSunstonePath,
-  defaultProvisionPath: internalProvisionPath,
-  defaultProvidersConfigPath: 'providers.d',
   defaultLogsLevels: ['error', 'warm', 'info', 'http', 'verbose', 'debug'],
   defaultLogMessageLength: 100,
   defaultTypeLog: 'prod',
@@ -139,13 +116,13 @@ const defaults = {
   defaultSharePath: '/usr/share/one',
   defaultVarPath: '/var/lib/one',
   defaultEtcPath: '/etc/one',
+  defaultLabelsFilename: 'default-labels.yaml',
   defaultLogFilename: `${appName}.log`,
   defaultKeyFilename: `${appName}_key`,
   defaultSunstoneAuth: 'sunstone_auth',
-  defaultVmrcTokens: 'sunstone_vmrc_tokens/',
   defaultBaseURL: '',
-  endpointVmrc: `${baseUrl}vmrc`,
   endpointGuacamole: `${baseUrl}guacamole`,
+  endpointExternalGuacamole: `${baseUrl}external-guacamole`,
   defaultNamespace: 'one',
   defaultMessageInvalidZone: 'Invalid Zone',
   default2FAIssuer: `${appName}-UI`,
@@ -153,6 +130,7 @@ const defaults = {
   default2FAOpennebulaTmpVar: `TMP_${default2FAOpennebulaVar}`,
   defaultMessageProblemOpennebula: 'Problem with connection or xml parser',
   defaultIP: defaultIp,
+  defaultProtocol: protocol,
   defaultSeverities: [
     `${severityPrepend}1`,
     `${severityPrepend}2`,
@@ -164,16 +142,28 @@ const defaults = {
   defaultPort: 2616,
   defaultEvents: ['SIGINT', 'SIGTERM'],
 
+  /** REMOTE MODULES */
+  defaultRemoteModules: [
+    'UtilsModule',
+    'ConstantsModule',
+    'ContainersModule',
+    'ComponentsModule',
+    'FeaturesModule',
+    'ProvidersModule',
+    'ModelsModule',
+    'HooksModule',
+  ],
+
   /** CONFIGURATION FILE */
+  defaultTabManifestFilename: 'tab-manifest.yaml',
+  defaultRemoteModulesConfigFilename: 'remotes-config.yaml',
   defaultConfigFile: `${appName}-server.conf`,
   defaultSunstoneViews: `${appNameSunstone}-views.yaml`,
   defaultSunstoneConfig: `${appNameSunstone}-server.conf`,
-  defaultProvisionConfig: `${appNameProvision}-server.conf`,
   defaultApiTimeout: 45000,
   protectedConfigData: {
     [appNameSunstone]: [
       'support_url',
-      'vcenter_prepend_command',
       'sunstone_prepend',
       'guacd',
       'tmpdir',
@@ -181,15 +171,58 @@ const defaults = {
       'proxy',
       'token_remote_support',
     ],
-    [appNameProvision]: [
-      'oneprovision_prepend_command',
-      'oneprovision_optional_create_command',
-    ],
   },
 
   /** HOOK OBJECT NAMES */
   hookObjectNames: {
     vn: 'net',
+  },
+  keysRDP: {
+    hostname: { key: 'full address:s:', value: '' },
+    username: { key: 'username:s:', value: '' },
+    password: { key: 'password 51:b:', value: '' },
+    port: { key: 'server port:i:', value: '' },
+    'server-layout': { key: 'keyboard layout:i:', value: '' },
+    'disable-audio': { key: 'audiomode:i:', value: 0 },
+    'enable-audio-input': { key: 'redirectaudiocapture:1:', value: 0 },
+    'enable-wallpaper': {
+      key: 'disable wallpaper:i:',
+      value: 0,
+      reverse: true,
+    },
+    'enable-theming': { key: 'disable themes:i:', value: 0, reverse: true },
+    'enable-font-smoothing': { key: 'allow font smoothing:i:', value: 1 },
+    'enable-full-window-drag': {
+      key: 'disable full window drag:i:',
+      value: 0,
+      reverse: true,
+    },
+    'enable-desktop-composition': {
+      key: 'allow desktop composition:i:',
+      value: 1,
+    },
+    'enable-menu-animations': {
+      key: 'disable menu anims:i:',
+      value: 0,
+      reverse: true,
+    },
+    'disable-bitmap-caching': {
+      key: 'bitmapcachepersistenable:i:',
+      value: 0,
+      reverse: true,
+    },
+    'disable-offscreen-caching': {
+      key: 'offscreen caching:i:',
+      value: 1,
+      reverse: true,
+    },
+    'disable-glyph-caching': { key: 'glyphcache:i:', value: 0, reverse: true },
+  },
+  keysVNC: {
+    hostname: { key: 'Host=', value: '' },
+    port: { key: 'Port=', value: '' },
+    username: { key: 'Username=', value: '' },
+    password: { key: 'Password=', value: '' },
   },
 }
 

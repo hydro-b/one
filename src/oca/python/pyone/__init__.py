@@ -1,5 +1,5 @@
 # Copyright 2018 www.privaz.io Valletech AB
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import requests
 import requests.utils
 
 from six import string_types
-from aenum import IntEnum
+from enum import IntEnum
 from pyone import bindings
 from .util import cast2one
 

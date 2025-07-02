@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -78,16 +78,6 @@ public:
                                   std::string& error) const
     {
         return 0;
-    }
-
-    /**
-     *  Check if action is supported for imported VMs
-     *    @param action
-     *    @return True if it is supported
-     */
-    bool is_imported_action_supported(VMActions::Action action) const
-    {
-        return imported_actions.is_set(action);
     }
 
     /**
@@ -264,19 +254,10 @@ protected:
 private:
     friend class VirtualMachineManager;
 
-    static const std::string imported_actions_default;
-    static const std::string imported_actions_default_public;
-
     /**
      *  Configuration file for the driver
      */
     Template    driver_conf;
-
-    /**
-     *  List of available actions for imported VMs. Each bit is an action
-     *  as defined in History.h, 1=supported and 0=not supported
-     */
-    ActionSet<VMActions::Action> imported_actions;
 
     /**
      * Set to true if the hypervisor can keep system snapshots across

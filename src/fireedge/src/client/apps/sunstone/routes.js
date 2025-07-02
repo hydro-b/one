@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -20,28 +20,29 @@ import {
 
 import loadable from '@loadable/component'
 
-import { T } from 'client/constants'
+import { T } from '@ConstantsModule'
 
 const Dashboard = loadable(
-  () => import('client/containers/Dashboard/Sunstone'),
+  () => import('@ContainersModule').then((module) => module.Dashboard),
   { ssr: false }
 )
-const Settings = loadable(() => import('client/containers/Settings'), {
-  ssr: false,
-})
-const Guacamole = loadable(() => import('client/containers/Guacamole'), {
-  ssr: false,
-})
-
-const WebMKS = loadable(() => import('client/containers/WebMKS'), {
-  ssr: false,
-})
+const Settings = loadable(
+  () => import('@ContainersModule').then((module) => module.Settings),
+  {
+    ssr: false,
+  }
+)
+const Guacamole = loadable(
+  () => import('@ContainersModule').then((module) => module.Guacamole),
+  {
+    ssr: false,
+  }
+)
 
 export const PATH = {
   DASHBOARD: '/dashboard',
   SETTINGS: '/settings',
   GUACAMOLE: '/guacamole/:id/:type',
-  WMKS: '/wmks/:id',
 }
 
 export const ENDPOINTS = [
@@ -66,12 +67,6 @@ export const ENDPOINTS = [
     disableLayout: true,
     path: PATH.GUACAMOLE,
     Component: Guacamole,
-  },
-  {
-    title: 'WebMKS', // no need to translate
-    disableLayout: true,
-    path: PATH.WMKS,
-    Component: WebMKS,
   },
 ]
 
@@ -104,6 +99,8 @@ export const getEndpointsByView = (views, endpoints = []) => {
       ?.toLowerCase()
       ?.split('/')
       ?.filter(Boolean)
+
+    if (route?.forceShow) return true
 
     const [resource, ...restOfParams] = splittedPath ?? []
     const hasParams = !!restOfParams.length

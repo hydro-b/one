@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -19,6 +19,8 @@
 #include "Nebula.h"
 #include "OneDB.h"
 #include "DatastorePool.h"
+#include "PlanPool.h"
+#include "HostPool.h"
 
 #include <sstream>
 
@@ -41,7 +43,7 @@ Cluster::Cluster(
 {
     if (cl_template)
     {
-        obj_template = move(cl_template);
+        obj_template = std::move(cl_template);
     }
     else
     {
@@ -117,6 +119,90 @@ int Cluster::get_default_system_ds(const set<int>& ds_set)
 /* ************************************************************************** */
 /* Cluster :: Database Access Functions                                       */
 /* ************************************************************************** */
+
+
+int Cluster::post_update_template(std::string& error, Template *_old_tmpl)
+{
+    std::vector<VectorAttribute*> one_drs_attrs;
+
+    const auto one_drs_num = obj_template->get("ONE_DRS", one_drs_attrs);
+
+    if (one_drs_num <= 0)
+    {
+        return 0;
+    }
+
+    auto* one_drs = one_drs_attrs.front();
+
+    const auto validate_field = [&](const std::string& field_name, const std::regex& pattern)
+    {
+        std::string value = one_util::trim(one_drs->vector_value(field_name));
+
+        one_util::tolower(value);
+
+        if (!std::regex_match(value, pattern))
+        {
+            error = "Error cluster template contains invalid " + field_name ;
+            return false;
+        }
+
+        if (!value.empty())
+        {
+            // Store normalized value
+            one_drs->replace(field_name, value);
+        }
+
+        return true;
+    };
+
+    if (!validate_field("POLICY", std::regex("^(pack|balance)$")))
+    {
+        return -1;
+    }
+
+    if (!validate_field("AUTOMATION", std::regex("^(manual|partial|full)$")))
+    {
+        return -1;
+    }
+
+    if (!validate_field("MIGRATION_THRESHOLD", std::regex(R"(^(-1||\d+(\.\d+)?)$)")))
+    {
+        return -1;
+    }
+
+    static std::vector<std::string> numeric_attr = {
+        "CPU_USAGE_WEIGHT",
+        "CPU_WEIGHT",
+        "MEMORY_WEIGHT",
+        "NET_WEIGHT",
+        "DISK_WEIGHT",
+        "PREDICTIVE"
+    };
+
+    for (const auto &i : numeric_attr)
+    {
+        if (!validate_field(i, std::regex(R"(^(\d+(\.\d+)?|)$)")))
+        {
+            return -1;
+        }
+    }
+
+    // Check Cluster doesn't contains pinned hosts
+    auto hpool = Nebula::instance().get_hpool();
+    for (const auto& host_id : hosts.get_collection())
+    {
+        if (auto host = hpool->get_ro(host_id))
+        {
+            if (host->is_pinned())
+            {
+                error = "Error cluster contains pinned host " + std::to_string(host_id);
+                return -1;
+            }
+        }
+    }
+
+    return 0;
+}
 
 int Cluster::insert_replace(SqlDB *db, bool replace, string& error_str)
 {
@@ -231,6 +317,32 @@ int Cluster::bootstrap(SqlDB * db)
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
+int Cluster::insert(SqlDB *db, std::string& error_str)
+{
+    int rc;
+
+    rc = insert_replace(db, false, error_str);
+
+    if ( rc != 0 )
+    {
+        return rc;
+    }
+
+    PlanPool * plpool = Nebula::instance().get_planpool();
+
+    Plan plan(oid);
+
+    if (plpool->insert(&plan) != 0)
+    {
+        return -1;
+    }
+
+    return vnc_bitmap.insert(oid, db);
+}
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+
 string& Cluster::to_xml(string& xml) const
 {
     ostringstream   oss;
@@ -241,13 +353,30 @@ string& Cluster::to_xml(string& xml) const
 
     oss <<
         "<CLUSTER>"  <<
-        "<ID>"          << oid          << "</ID>"          <<
-        "<NAME>"        << name         << "</NAME>"        <<
+        "<ID>"       << oid  << "</ID>"      <<
+        "<NAME>"     << name << "</NAME>"    <<
         hosts.to_xml(host_collection_xml)    <<
         datastores.to_xml(ds_collection_xml) <<
         vnets.to_xml(vnet_collection_xml)    <<
         obj_template->to_xml(template_xml)   <<
+        plan_xml                             <<
         "</CLUSTER>";
+
+    xml = oss.str();
+
+    return xml;
+}
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+
+std::string& Cluster::template_xml(std::string& xml) const
+{
+    ostringstream oss;
+
+    obj_template->each_attribute([&oss](const Attribute * a){
+        a->to_xml(oss);
+    });
 
     xml = oss.str();
 
@@ -297,4 +426,73 @@ int Cluster::from_xml(const string& xml)
     }
 
     return 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+
+void Cluster::set_error_message(const char *mod, const string& name, const string& message)
+{
+    static const int MAX_ERROR_MSG_LENGTH = 100;
+
+    SingleAttribute * attr;
+    ostringstream     error_value;
+
+    error_value << one_util::log_time() << ": " << message.substr(0, MAX_ERROR_MSG_LENGTH);
+
+    if (message.length() >= MAX_ERROR_MSG_LENGTH)
+    {
+        error_value << "... see more details in oned.log";
+
+        NebulaLog::error(mod, message);
+    }
+
+    attr = new SingleAttribute(name, error_value.str());
+
+    obj_template->erase(name);
+    obj_template->set(attr);
+}
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+
+void Cluster::load_plan()
+{
+    auto plpool = Nebula::instance().get_planpool();
+
+    if (auto plan = plpool->get_ro(oid))
+    {
+        if (plan->state() != PlanState::NONE)
+        {
+            plan_xml = plan->to_xml();
+        }
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+
+Cluster::DrsAutomation Cluster::automation() const
+{
+    auto *vattr = obj_template->get("ONE_DRS");
+
+    if (!vattr)
+    {
+        return DrsAutomation::MANUAL;
+    }
+
+    string str = vattr->vector_value("AUTOMATION");
+
+    one_util::tolower(str);
+
+    if ( str == "partial" )
+    {
+        return Cluster::PARTIAL;
+    }
+    else if ( str == "full" )
+    {
+        return Cluster::FULL;
+    }
+
+    return Cluster::MANUAL;
 }

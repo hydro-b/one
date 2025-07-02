@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -18,6 +18,14 @@ require 'one_helper'
 require 'optparse/time'
 
 class AcctHelper < OpenNebulaHelper::OneHelper
+    TIME_ZONE_CUR = {
+        :name  => "timezone",
+        :short => "-t TZ",
+        :large => "--timezone TZ",
+        :description => "User defined Time Zone",
+        :format => String
+    }
+
     START_TIME_ACCT = {
         :name   => "start_time",
         :short  => "-s TIME",
@@ -97,7 +105,7 @@ class AcctHelper < OpenNebulaHelper::OneHelper
         :description => "Split the output in a table for each VM"
     }
 
-    ACCT_OPTIONS     = [START_TIME_ACCT, END_TIME_ACCT, USERFILTER, GROUP, HOST, XPATH, SPLIT]
+    ACCT_OPTIONS     = [TIME_ZONE_CUR, START_TIME_ACCT, END_TIME_ACCT, USERFILTER, GROUP, HOST, XPATH, SPLIT]
     SHOWBACK_OPTIONS = [START_TIME_SHOWBACK, END_TIME_SHOWBACK, USERFILTER, GROUP, OpenNebulaHelper::FORMAT]
 
     ACCT_OPTIONS << OpenNebulaHelper::XML

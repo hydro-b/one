@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -69,7 +69,7 @@ VdcPool::VdcPool(SqlDB * db, bool is_federation_slave)
         vdc->add_group(GroupPool::USERS_ID, error_str);
         vdc->add_cluster(Nebula::instance().get_zone_id(), Vdc::ALL_RESOURCES, error_str);
 
-        update(vdc.get());
+        VdcPool::update(vdc.get());
 
         // The first 100 Vdc IDs are reserved for system Vdcs.
         // Regular ones start from ID 100
@@ -94,11 +94,6 @@ int VdcPool::allocate(
         int *       oid,
         string&     error_str)
 {
-    int    db_oid;
-    string name;
-
-    ostringstream oss;
-
     if (Nebula::instance().is_federation_slave())
     {
         NebulaLog::log("ONE", Log::ERROR,
@@ -108,37 +103,35 @@ int VdcPool::allocate(
         return -1;
     }
 
-    auto vdc = new Vdc(-1, move(vdc_template));
+    Vdc vdc {-1, move(vdc_template)};
 
     // -------------------------------------------------------------------------
     // Check name & duplicates
     // -------------------------------------------------------------------------
 
-    vdc->get_template_attribute("NAME", name);
+    string name;
+    vdc.get_template_attribute("NAME", name);
+
+    *oid = -1;
 
     if ( !PoolObjectSQL::name_is_valid(name, error_str) )
     {
-        goto error_name;
+        return *oid;
     }
 
-    db_oid = exist(name);
+    const auto db_oid = exist(name);
 
     if( db_oid != -1 )
     {
-        goto error_duplicated;
+        ostringstream oss;
+
+        oss << "NAME is already taken by Vdc " << db_oid << ".";
+        error_str = oss.str();
+
+        return *oid;
     }
 
     *oid = PoolSQL::allocate(vdc, error_str);
-
-    return *oid;
-
-error_duplicated:
-    oss << "NAME is already taken by Vdc " << db_oid << ".";
-    error_str = oss.str();
-
-error_name:
-    delete vdc;
-    *oid = -1;
 
     return *oid;
 }

@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -194,6 +194,16 @@ void InformationManager::raft_status(RaftManager::State state)
 
     imd->write(msg);
 }
+
+/* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
+
+void InformationManager::reconnected()
+{
+    auto rftm = Nebula::instance().get_raftm();
+    raft_status(rftm->get_state());
+}
+
 
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
@@ -433,18 +443,6 @@ void InformationManager::_vm_state(unique_ptr<im_msg_t> msg)
         vm_tmpl->vector_value("DEPLOY_ID", deploy_id);
         vm_tmpl->vector_value("STATE", state_str);
 
-        if (id < 0)
-        {
-            // Check wild VMs
-            id = vmpool->get_vmid(deploy_id);
-
-            if (id < 0)
-            {
-                // Not imported wild, ignore VM state
-                continue;
-            }
-        }
-
         hv_ids.insert(id);
 
         NebulaLog::debug("InM", "VM_STATE update from host: " +
@@ -465,7 +463,7 @@ void InformationManager::_vm_state(unique_ptr<im_msg_t> msg)
             continue;
         }
 
-        if (vm->get_deploy_id() != deploy_id)
+        if (vm->get_deploy_id() != deploy_id && state_str == "RUNNING")
         {
             vm->set_deploy_id(deploy_id);
             vmpool->update(vm.get());

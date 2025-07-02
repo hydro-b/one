@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -27,7 +27,7 @@ import (
 )
 
 // Available template parts and keys are listed here: https://docs.opennebula.io/5.8/operation/references/template.html
-// Some specific part are not defined: vCenter, Public Cloud, Hypervisor, User Inputs
+// Some specific part are not defined: Public Cloud, Hypervisor, User Inputs
 
 // Template is a structure allowing to parse VM templates.
 // It's defined in a semi-static way to guide the user among the bunch of values
@@ -157,6 +157,19 @@ func (t *Template) GetNICs() []shared.NIC {
 	return nics
 }
 
+// GetNICAliases allow to get NIC Aliases from Template
+func (t *Template) GetNICAliases() []shared.NIC {
+
+	vecs := t.GetVectors(string(shared.NICAliasVec))
+	nicAliases := make([]shared.NIC, len(vecs))
+
+	for i, v := range vecs {
+		nicAliases[i] = shared.NIC{*v}
+	}
+
+	return nicAliases
+}
+
 // AddDisk allow to add a disk to the template
 func (t *Template) AddDisk() *shared.Disk {
 	disk := shared.NewDisk()
@@ -187,7 +200,7 @@ func (t *Template) GetShowback(key keys.Showback) (string, error) {
 
 // OS template part
 
-func (t *Template) AddOS(key keys.OS, value string) error {
+func (t *Template) AddOS(key keys.OS, value interface{}) error {
 	return t.Template.AddPairToVec(keys.OSVec, string(key), value)
 }
 

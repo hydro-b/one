@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------ */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems              */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems              */
 /*                                                                          */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may  */
 /* not use this file except in compliance with the License. You may obtain  */
@@ -27,6 +27,22 @@
 
 /* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * This class is used to pass monitor configuration form the Host/Cluster
+ * to the HostShare class
+ */
+struct HostShareConf
+{
+    long long total_cpu;
+    long long total_mem;
+
+    std::string rcpu;
+    std::string rmem;
+
+    std::string pci_filter;
+    std::string pci_short_address;
+};
 
 /**
  *  The HostShare class. It represents a logical partition of a host...
@@ -68,7 +84,7 @@ public:
     bool add_pci(HostShareCapacity &sr)
     {
         // NOTE THIS FUNCTION DOES NOT PERFORM ANY ROLLBACK
-        return pci.add(sr.pci, sr.vmid);
+        return pci.add(sr);
     }
 
     /**
@@ -79,7 +95,7 @@ public:
 
     void del_pci(HostShareCapacity &sr)
     {
-        pci.del(sr.pci, sr.vmid);
+        pci.del(sr);
     }
 
     /**
@@ -99,7 +115,7 @@ public:
      *    @return true if the share can host the VM or it is the only one
      *    configured
      */
-    bool test(HostShareCapacity& sr, std::string& error) const;
+    bool test(HostShareCapacity& sr, std::string& error, bool enforce) const;
 
     /**
      *  Function to write a HostShare to an output stream
@@ -114,6 +130,7 @@ public:
      */
     std::string& to_xml(std::string& xml) const;
 
+
     /**
      * Set the capacity attributes of the share. CPU and Memory may reserve some
      * capacity according to RESERVED_CPU and RESERVED_MEM. These values can be
@@ -125,19 +142,12 @@ public:
      * probes. The values are removed from the template.
      *
      *   @param ht template for the host
-     *   @param rcpu, reserved cpu for the host
-     *   @param rmem, reserved mem for the host
+     *   @param host_conf vector of monitor atributes from the host
      *
      * NOTE: reserved strings will be modified
      */
-    void set_monitorization(Template& ht, std::string& rcpu, std::string& rmem);
 
-
-    /**
-     * Set the capacity attributes of the share.
-     * Same as the 3 parameter method, except it does not update reserved CPU and Memory
-     */
-    void set_monitorization(Template& ht);
+    void set_monitorization(Template& ht, HostShareConf &conf);
 
     /**
      *  Resets capaity values of the share

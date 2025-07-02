@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -20,18 +20,26 @@
 #
 
 AllCops:
+  TargetRubyVersion: 2.5.9
   Exclude:
+# one-ee-tools repo
+    - src/onegather/*
+    - src/onecfg/*/*/*
+    - src/onedb/*/*
+    - src/onesupport/*
+    - src/ovirtapi/tests/*
+    - src/oneverify/*
+    - src/onenetapp/*/*/*
+    - src/onecfg/*/*/*/*
+    - src/ovirtapi/scripts/*
+# one repo
     - /**/*.schema
-    - src/sunstone/public/node_modules/**/*
-    - src/vnm_mad/remotes/vcenter/vnet_create
-    - src/vnm_mad/remotes/vcenter/vnet_delete
-    - src/vnm_mad/remotes/vcenter/virtual_network_xml.rb
+    - src/onecfg/lib/config/type/yaml.rb
     - src/tm_mad
     - share/onegate/onegate
     - share/scons/get_xmlrpc_config
     - share/rubygems/generate
     - share/hooks/raft/follower_cleanup
-    - share/esx-fw-vnc/Vagrantfile
     - share/vendor/ruby/gems/packethost/Rakefile
     - share/vendor/ruby/gems/packethost/Gemfile
     - share/vendor/ruby/gems/packethost/packethost.gemspec
@@ -45,9 +53,6 @@ AllCops:
     - src/authm_mad/remotes/server_cipher/authenticate
     - src/authm_mad/remotes/x509/authenticate
     - src/authm_mad/remotes/ssh/authenticate
-    - src/sunstone/bin/novnc-server
-    - src/sunstone/config.ru
-    - src/im_mad/remotes/dummy-probes.d/vms/monitor/monitor.rb
     - src/im_mad/remotes/dummy.d/monitord-client.rb
     - src/im_mad/remotes/dummy.d/monitord-client.rb
     - src/im_mad/remotes/kvm-probes.d/host/monitor/numa_usage.rb
@@ -55,42 +60,12 @@ AllCops:
     - src/im_mad/remotes/kvm-probes.d/host/system/numa_host.rb
     - src/im_mad/remotes/lib/kvm.rb
     - src/im_mad/remotes/lib/probe_db.rb
-    - src/im_mad/remotes/lxd-probes.d/host/monitor/numa_usage.rb
-    - src/im_mad/remotes/lxd-probes.d/host/system/numa_host.rb
-    - src/im_mad/remotes/lxd-probes.d/vms/status/state.rb
     - src/im_mad/remotes/node-probes.d/numa_usage.rb
     - src/im_mad/remotes/lib/linux.rb
     - src/im_mad/remotes/node-probes.d/numa_host.rb
-    - src/pm_mad/remotes/dummy/cancel
-    - src/pm_mad/remotes/dummy/shutdown
-    - src/pm_mad/remotes/dummy/reboot
-    - src/pm_mad/remotes/dummy/deploy
-    - src/pm_mad/remotes/dummy/reset
-    - src/pm_mad/remotes/dummy/poll
-    - src/pm_mad/remotes/equinix/cancel
-    - src/pm_mad/remotes/equinix/shutdown
-    - src/pm_mad/remotes/equinix/reboot
-    - src/pm_mad/remotes/equinix/deploy
-    - src/pm_mad/remotes/equinix/reset
-    - src/pm_mad/remotes/equinix/poll
-    - src/pm_mad/remotes/ec2/cancel
-    - src/pm_mad/remotes/ec2/shutdown
-    - src/pm_mad/remotes/ec2/reboot
-    - src/pm_mad/remotes/ec2/deploy
-    - src/pm_mad/remotes/ec2/reset
-    - src/pm_mad/remotes/ec2/poll
     - src/onegate/config.ru
     - src/im_mad/remotes/kvm-probes.d/host/system/pci.rb
-    - src/im_mad/remotes/lxd-probes.d/host/system/pci.rb
-    - src/im_mad/remotes/lxd-probes.d/pci.rb
-    - src/im_mad/remotes/kvm-probes.d/pci.rb
     - src/im_mad/remotes/kvm.d/monitord-client.rb
-    - src/im_mad/remotes/lxd.d/monitord-client.rb
-    - src/im_mad/remotes/equinix.d/poll
-    - src/im_mad/remotes/ec2.d/poll
-    - src/im_mad/remotes/one.d/poll
-    - src/im_mad/remotes/az.d/poll
-    - src/im_mad/remotes/lib/vcenter_cluster.rb
     - src/vnm_mad/remotes/ovswitch/post
     - src/vnm_mad/remotes/ovswitch/clean
     - src/vnm_mad/remotes/ovswitch/pre
@@ -98,10 +73,6 @@ AllCops:
     - src/vnm_mad/remotes/802.1Q/update_sg
     - src/vnm_mad/remotes/802.1Q/clean
     - src/vnm_mad/remotes/802.1Q/pre
-    - src/vnm_mad/remotes/ebtables/post
-    - src/vnm_mad/remotes/ebtables/update_sg
-    - src/vnm_mad/remotes/ebtables/clean
-    - src/vnm_mad/remotes/ebtables/pre
     - src/vnm_mad/remotes/bridge/clean
     - src/vnm_mad/remotes/bridge/pre
     - src/vnm_mad/remotes/vxlan/post
@@ -115,67 +86,6 @@ AllCops:
     - src/vnm_mad/remotes/ovswitch_vxlan/post
     - src/vnm_mad/remotes/ovswitch_vxlan/clean
     - src/vnm_mad/remotes/ovswitch_vxlan/pre
-    - src/vmm_mad/remotes/lxd/attach_nic
-    - src/vmm_mad/remotes/lxd/detach_nic
-    - src/vmm_mad/remotes/lxd/detach_disk
-    - src/vmm_mad/remotes/lxd/shutdown
-    - src/vmm_mad/remotes/lxd/attach_disk
-    - src/vmm_mad/remotes/lxd/reboot
-    - src/vmm_mad/remotes/lxd/deploy
-    - src/vmm_mad/remotes/lxd/prereconfigure
-    - src/vmm_mad/remotes/lxd/reconfigure
-    - src/vmm_mad/remotes/lxd/poll
-    - src/vmm_mad/remotes/one/cancel
-    - src/vmm_mad/remotes/one/shutdown
-    - src/vmm_mad/remotes/one/reboot
-    - src/vmm_mad/remotes/one/deploy
-    - src/vmm_mad/remotes/one/reset
-    - src/vmm_mad/remotes/one/save
-    - src/vmm_mad/remotes/one/restore
-    - src/vmm_mad/remotes/one/poll
-    - src/vmm_mad/remotes/kvm/poll
-    - src/vmm_mad/remotes/az/cancel
-    - src/vmm_mad/remotes/az/shutdown
-    - src/vmm_mad/remotes/az/reboot
-    - src/vmm_mad/remotes/az/deploy
-    - src/vmm_mad/remotes/az/save
-    - src/vmm_mad/remotes/az/restore
-    - src/vmm_mad/remotes/az/poll
-    - src/vmm_mad/remotes/equinix/cancel
-    - src/vmm_mad/remotes/equinix/shutdown
-    - src/vmm_mad/remotes/equinix/reboot
-    - src/vmm_mad/remotes/equinix/deploy
-    - src/vmm_mad/remotes/equinix/reset
-    - src/vmm_mad/remotes/equinix/poll
-    - src/vmm_mad/remotes/ec2/cancel
-    - src/vmm_mad/remotes/ec2/shutdown
-    - src/vmm_mad/remotes/ec2/reboot
-    - src/vmm_mad/remotes/ec2/deploy
-    - src/vmm_mad/remotes/ec2/save
-    - src/vmm_mad/remotes/ec2/restore
-    - src/vmm_mad/remotes/ec2/poll
-    - src/cloud/ec2/bin/econe-detach-volume
-    - src/cloud/ec2/bin/econe-start-instances
-    - src/cloud/ec2/bin/econe-associate-address
-    - src/cloud/ec2/bin/econe-create-volume
-    - src/cloud/ec2/bin/econe-delete-volume
-    - src/cloud/ec2/bin/econe-attach-volume
-    - src/cloud/ec2/bin/econe-stop-instances
-    - src/cloud/ec2/bin/econe-delete-keypair
-    - src/cloud/ec2/bin/econe-register
-    - src/cloud/ec2/bin/econe-release-address
-    - src/cloud/ec2/bin/econe-describe-images
-    - src/cloud/ec2/bin/econe-terminate-instances
-    - src/cloud/ec2/bin/econe-describe-keypairs
-    - src/cloud/ec2/bin/econe-describe-instances
-    - src/cloud/ec2/bin/econe-reboot-instances
-    - src/cloud/ec2/bin/econe-allocate-address
-    - src/cloud/ec2/bin/econe-upload
-    - src/cloud/ec2/bin/econe-describe-addresses
-    - src/cloud/ec2/bin/econe-run-instances
-    - src/cloud/ec2/bin/econe-disassociate-address
-    - src/cloud/ec2/bin/econe-create-keypair
-    - src/cloud/ec2/bin/econe-describe-volumes
     - src/market_mad/remotes/s3/monitor
     - src/market_mad/remotes/s3/delete
     - src/market_mad/remotes/s3/import
@@ -185,8 +95,6 @@ AllCops:
     - share/scons/po2json.rb
     - share/sudoers/sudo_commands.rb
     - share/hooks/ft/host_error.rb
-    - share/instance_types/ec2-instance-types.rb
-    - share/instance_types/az-instance-types.rb
     - share/vendor/ruby/gems/packethost/spec/spec_helper.rb
     - share/vendor/ruby/gems/packethost/spec/support/webmock.rb
     - share/vendor/ruby/gems/packethost/spec/support/fake_packet.rb
@@ -235,58 +143,15 @@ AllCops:
     - src/authm_mad/remotes/server_x509/server_x509_auth.rb
     - src/authm_mad/remotes/server_cipher/server_cipher_auth.rb
     - src/authm_mad/remotes/x509/x509_auth.rb
-    - src/sunstone/sunstone-server.rb
-    - src/sunstone/test/spec/spec_helper.rb
-    - src/sunstone/test/spec/vnet_spec.rb
-    - src/sunstone/test/spec/image_spec.rb
-    - src/sunstone/test/spec/vm_spec.rb
-    - src/sunstone/test/spec/host_spec.rb
-    - src/sunstone/test/spec/user_spec.rb
-    - src/sunstone/OpenNebulaAddons.rb
-    - src/sunstone/models/sunstone_vnc.rb
-    - src/sunstone/models/sunstone_vmrc.rb
-    - src/sunstone/models/sunstone_vm_helper.rb
-    - src/sunstone/models/OpenNebulaJSON.rb
-    - src/sunstone/models/SunstoneViews.rb
-    - src/sunstone/models/SunstoneServer.rb
-    - src/sunstone/models/OpenNebulaJSON/SecurityGroupJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/HostJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/PoolJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/TemplateJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/DatastoreJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/UserJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/AclJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/JSONUtils.rb
-    - src/sunstone/models/OpenNebulaJSON/MarketPlaceAppJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/ImageJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/ZoneJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/MarketPlaceJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/VirtualNetworkJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/VirtualRouterJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/VirtualNetworkTemplateJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/GroupJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/ClusterJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/VMGroupJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/BackupJobJSON.rb
-    - src/sunstone/models/OpenNebulaJSON/VdcJSON.rb
-    - src/sunstone/public/config.rb
-    - src/sunstone/routes/oneflow.rb
-    - src/sunstone/routes/vcenter.rb
-    - src/sunstone/models/OpenNebula2FA/SunstoneWebAuthn.rb
     - src/onegate/onegate-server.rb
     - src/datastore_mad/remotes/xpath.rb
     - src/datastore_mad/remotes/url.rb
-    - src/im_mad/dummy/one_im_dummy.rb
     - src/im_mad/im_exec/one_im_exec.rb
-    - src/im_mad/remotes/lxd-probes.d/lxd.rb
-    - src/im_mad/remotes/kvm-probes.d/kvm.rb
-    - src/im_mad/remotes/kvm-probes.d/machines-models.rb
     - src/im_mad/remotes/common.d/monitord-client.rb
     - src/im_mad/remotes/node-probes.d/pci.rb
     - src/hm_mad/one_hm.rb
     - src/vnm_mad/remotes/ovswitch/OpenvSwitch.rb
     - src/vnm_mad/remotes/802.1Q/vlan_tag_driver.rb
-    - src/vnm_mad/remotes/ebtables/Ebtables.rb
     - src/vnm_mad/remotes/vxlan/vxlan.rb
     - src/vnm_mad/remotes/vxlan/vxlan_driver.rb
     - src/vnm_mad/remotes/ovswitch_vxlan/OpenvSwitchVXLAN.rb
@@ -375,20 +240,7 @@ AllCops:
     - src/oca/ruby/opennebula/marketplace_pool.rb
     - src/oca/ruby/opennebula/vdc.rb
     - src/oca/ruby/opennebula/user.rb
-    - src/oca/ruby/deprecated/OpenNebula.rb
     - src/vmm_mad/dummy/one_vmm_dummy.rb
-    - src/vmm_mad/remotes/one/opennebula_driver.rb
-    - src/vmm_mad/remotes/lib/lxd/mapper/qcow2.rb
-    - src/vmm_mad/remotes/lib/lxd/mapper/mapper.rb
-    - src/vmm_mad/remotes/lib/lxd/mapper/rbd.rb
-    - src/vmm_mad/remotes/lib/lxd/mapper/raw.rb
-    - src/vmm_mad/remotes/lib/lxd/container.rb
-    - src/vmm_mad/remotes/lib/lxd/client.rb
-    - src/vmm_mad/remotes/lib/lxd/opennebula_vm.rb
-    - src/vmm_mad/remotes/lib/lxd/command.rb
-    - src/vmm_mad/remotes/lib/poll_common.rb
-    - src/vmm_mad/remotes/equinix/equinix_driver.rb
-    - src/vmm_mad/remotes/ec2/ec2_driver.rb
     - src/mad/ruby/ssh_stream.rb
     - src/mad/ruby/test/MonkeyPatcher.rb
     - src/mad/ruby/test/OpenNebulaDriver_spec.rb
@@ -397,7 +249,6 @@ AllCops:
     - src/mad/ruby/CommandManager.rb
     - src/mad/ruby/test_mad.rb
     - src/mad/ruby/OpenNebulaDriver.rb
-    - src/mad/ruby/scripts_common.rb
     - src/ipamm_mad/one_ipam.rb
     - src/cloud/common/CloudClient.rb
     - src/cloud/common/CloudServer.rb
@@ -407,17 +258,6 @@ AllCops:
     - src/cloud/common/CloudAuth/SunstoneCloudAuth.rb
     - src/cloud/common/CloudAuth/OneGateCloudAuth.rb
     - src/cloud/common/CloudAuth/OpenNebulaCloudAuth.rb
-    - src/cloud/ec2/lib/ebs.rb
-    - src/cloud/ec2/lib/elastic_ip.rb
-    - src/cloud/ec2/lib/ImageEC2.rb
-    - src/cloud/ec2/lib/net_ssh_replacement.rb
-    - src/cloud/ec2/lib/keypair.rb
-    - src/cloud/ec2/lib/EC2QueryServer.rb
-    - src/cloud/ec2/lib/econe-server.rb
-    - src/cloud/ec2/lib/EC2QueryClient.rb
-    - src/cloud/ec2/lib/tags.rb
-    - src/cloud/ec2/lib/instance.rb
-    - src/cloud/ec2/lib/econe_application.rb
     - src/onedb/database_schema.rb
     - src/onedb/fsck/image.rb
     - src/onedb/fsck/vrouter.rb
@@ -432,79 +272,26 @@ AllCops:
     - src/onedb/patches/marketapps_clean.rb
     - src/onedb/patches/4.14_monitoring.rb
     - src/onedb/patches/next_snapshot.rb
-    - src/onedb/vcenter_one54_pre.rb
-    - src/onedb/vcenter_one54.rb
     - src/onedb/onedb.rb
-    - src/onedb/shared/4.2.0_to_4.3.80.rb
-    - src/onedb/shared/5.3.80_to_5.4.0.rb
-    - src/onedb/shared/3.0.0_to_3.1.0.rb
-    - src/onedb/shared/3.2.0_to_3.2.1.rb
-    - src/onedb/shared/3.6.0_to_3.7.80.rb
-    - src/onedb/shared/3.5.80_to_3.6.0.rb
-    - src/onedb/shared/5.6.0_to_5.7.80.rb
-    - src/onedb/shared/4.4.1_to_4.5.80.rb
-    - src/onedb/shared/3.1.0_to_3.1.80.rb
-    - src/onedb/shared/3.8.0_to_3.8.1.rb
-    - src/onedb/shared/2.0_to_2.9.80.rb
-    - src/onedb/shared/3.8.5_to_3.9.80.rb
-    - src/onedb/shared/4.5.80_to_4.6.0.rb
-    - src/onedb/shared/3.8.2_to_3.8.3.rb
-    - src/onedb/shared/4.0.1_to_4.1.80.rb
-    - src/onedb/shared/4.11.80_to_4.90.0.rb
-    - src/onedb/shared/3.9.80_to_3.9.90.rb
-    - src/onedb/shared/4.90.0_to_5.2.0.rb
-    - src/onedb/shared/4.6.0_to_4.11.80.rb
-    - src/onedb/shared/3.3.0_to_3.3.80.rb
-    - src/onedb/shared/3.4.1_to_3.5.80.rb
-    - src/onedb/shared/5.4.1_to_5.5.80.rb
-    - src/onedb/shared/4.3.85_to_4.3.90.rb
-    - src/onedb/shared/4.4.0_to_4.4.1.rb
-    - src/onedb/shared/3.8.1_to_3.8.2.rb
-    - src/onedb/shared/2.9.90_to_3.0.0.rb
-    - src/onedb/shared/3.8.3_to_3.8.4.rb
-    - src/onedb/shared/2.9.80_to_2.9.85.rb
-    - src/onedb/shared/5.2.0_to_5.3.80.rb
-    - src/onedb/shared/3.4.0_to_3.4.1.rb
-    - src/onedb/shared/5.4.0_to_5.4.1.rb
-    - src/onedb/shared/4.3.80_to_4.3.85.rb
-    - src/onedb/shared/3.2.1_to_3.3.0.rb
-    - src/onedb/shared/2.9.85_to_2.9.90.rb
-    - src/onedb/shared/3.8.4_to_3.8.5.rb
-    - src/onedb/shared/3.7.80_to_3.8.0.rb
-    - src/onedb/shared/3.1.80_to_3.2.0.rb
-    - src/onedb/shared/5.6.0_to_5.10.0.rb
-    - src/onedb/shared/3.3.80_to_3.4.0.rb
-    - src/onedb/shared/4.3.90_to_4.4.0.rb
-    - src/onedb/shared/3.9.90_to_4.0.0.rb
-    - src/onedb/shared/4.0.0_to_4.0.1.rb
-    - src/onedb/shared/4.1.80_to_4.2.0.rb
-    - src/onedb/shared/5.6.0_to_5.10.0.rb
-    - src/onedb/shared/5.5.80_to_5.6.0.rb
-    - src/onedb/shared/5.10.0_to_5.12.0.rb
-    - src/onedb/local/5.3.80_to_5.4.0.rb
-    - src/onedb/local/4.13.80_to_4.13.85.rb
-    - src/onedb/local/5.6.0_to_5.7.80.rb
-    - src/onedb/local/5.4.1_to_5.5.80.rb
-    - src/onedb/local/4.13.85_to_4.90.0.rb
-    - src/onedb/local/5.4.0_to_5.4.1.rb
-    - src/onedb/local/4.11.80_to_4.13.80.rb
-    - src/onedb/local/4.10.3_to_4.11.80.rb
-    - src/onedb/local/4.90.0_to_5.3.80.rb
-    - src/onedb/local/4.5.80_to_4.7.80.rb
-    - src/onedb/local/4.9.80_to_4.10.3.rb
-    - src/onedb/local/5.5.80_to_5.6.0.rb
-    - src/onedb/local/4.7.80_to_4.9.80.rb
-    - src/onedb/local/5.8.0_to_5.9.80.rb
-    - src/onedb/local/5.8.0_to_5.10.0.rb
-    - src/onedb/local/5.6.0_to_5.10.0.rb
-    - src/onedb/local/5.10.0_to_5.12.0.rb
     - src/onedb/onedb_backend.rb
     - src/onedb/sqlite2mysql.rb
     - src/market_mad/one_market.rb
     - src/tm_mad/one_tm.rb
     - src/oca/ruby/opennebula/flow/grammar.rb
     - src/oca/ruby/opennebula/flow/validator.rb
-    - src/sunstone/OpenNebulaVMRC.rb
+    - src/oneprometheus/grafana/share/patch_dashboards.rb
+    - src/oneprometheus/opennebula-exporter/src/opennebula_exporter.rb
+    - src/oneprometheus/opennebula-exporter/src/opennebula_host_collector.rb
+    - src/oneprometheus/opennebula-exporter/src/opennebula_datastore_collector.rb
+    - src/oneprometheus/opennebula-exporter/src/opennebula_collector.rb
+    - src/oneprometheus/opennebula-exporter/src/opennebula_server_collector.rb
+    - src/oneprometheus/opennebula-exporter/src/opennebula_vm_collector.rb
+    - src/oneprometheus/prometheus/share/patch_datasources_spec.rb
+    - src/oneprometheus/prometheus/share/metrics_to_md.rb
+    - src/oneprometheus/prometheus/share/patch_datasources.rb
+    - src/oneprometheus/opennebula-libvirt-exporter/src/libvirt_exporter.rb
+    - src/oneprometheus/opennebula-libvirt-exporter/src/libvirt_collector.rb
+    - src/oneprovision/lib/provision/provision_config.rb
   NewCops: enable
 
 ########
@@ -565,6 +352,15 @@ Layout/LineContinuationLeadingSpace:
 #######
 # STYLE
 #######
+
+Style/EmptyStringInsideInterpolation:
+    Enabled: false
+
+Style/RedundantFormat:
+    Enabled: false
+
+Style/HashSlice:
+    Enabled: false
 
 Style/OpenStructUse:
     Enabled: false
@@ -810,6 +606,12 @@ Style/SuperArguments:
 # LINT
 ######
 
+Lint/UselessConstantScoping:
+    Enabled: false
+
+Lint/ConstantResolution:
+    Enabled: false
+
 Lint/IneffectiveAccessModifier:
     Enabled: false
 
@@ -987,6 +789,12 @@ Metrics/AbcSize:
 # Disable method length
 Metrics/MethodLength:
   Enabled: false
+
+Naming/PredicatePrefix:
+    Enabled: false
+
+Naming/PredicateMethod:
+    Enabled: false
 
 Naming/VariableName:
     Enabled: false

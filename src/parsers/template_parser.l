@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -54,7 +54,7 @@ CDATA "\]\]\>"
 [[:blank:]\n]+    ;
 
  /* ------------------------------------------------------------------------- */
- /* Variable: Alpha numeric charatcers and '_'                                */
+ /* Variable: Alpha numeric characters and '_'                                */
  /* ------------------------------------------------------------------------- */
 [[:alnum:]_]+  { yylval_param->val_str = mem_collector_strdup(mc,yytext);
                  return VARIABLE; }

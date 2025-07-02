@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -16,6 +16,7 @@
 
 require 'vnmmad'
 
+# Implementation of the Open vSwitch driver
 class OpenvSwitchVLAN < VNMMAD::VNMDriver
 
     DRIVER       = 'ovswitch'
@@ -38,10 +39,10 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
     ]
 
     def initialize(vm, xpath_filter = nil, deploy_id = nil)
-        @locking = false
-
         xpath_filter ||= XPATH_FILTER
         super(vm, xpath_filter, deploy_id)
+
+        @locking = false
     end
 
     def activate
@@ -291,8 +292,6 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
                     end
                 end
             end
-        rescue StandardError => e
-            raise e
         ensure
             unlock
         end
@@ -308,9 +307,7 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
     end
 
     def tag_trunk_vlans
-        range = @nic[:vlan_tagged_id]
-
-        return unless range?(range)
+        return unless @nic.vlan_trunk?
 
         ovs_vsctl_cmd = "#{command(:ovs_vsctl)} set Port #{@nic[:tap]}"
 
@@ -318,7 +315,7 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
         # we need to support even older versions. We expand the
         # intervals into the list of values [x,x+1,...,y-1,y],
         # which should work for all.
-        cmd = "#{ovs_vsctl_cmd} trunks='#{expand_range(range)}'"
+        cmd = "#{ovs_vsctl_cmd} trunks='#{@nic.vlan_trunk_to_s}'"
         run cmd
 
         cmd = "#{ovs_vsctl_cmd} vlan_mode=native-untagged"
@@ -326,13 +323,11 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
     end
 
     def tag_qinq
-        range = @nic[:cvlans]
-
         set_vlan_limit(2)
 
         cmd =  "#{command(:ovs_vsctl)} set Port #{@nic[:tap]} "
         cmd << "vlan_mode=dot1q-tunnel tag=#{@nic[:vlan_id]} "
-        cmd << "cvlans=#{expand_range(range)}"
+        cmd << "cvlans=#{@nic.cvlans_to_s}"
 
         run cmd
 
@@ -346,11 +341,13 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
     end
 
     # Following IP-spoofing rules may be created:
-    # (if ARP Cache Poisoning) in_port=<PORT>,table=20,arp,arp_spa=<IP>,priority=50000,actions=NORMAL
-    # (if ARP Cache Poisoning) in_port=<PORT>,table=20,arp,priority=49000,actions=drop
+    # (if ARP Cache Poisoning)
+    #     in_port=<PORT>,table=20,arp,arp_spa=<IP>,priority=50000,actions=NORMAL
+    #     in_port=<PORT>,table=20,arp,priority=49000,actions=drop
     # in_port=<PORT>,table=20,ip,nw_src=<IP>,priority=45000,actions=NORMAL
     # in_port=<PORT>,table=20,ipv6,ipv6_src=<IP6>,priority=45000,actions=NORMAL
-    # in_port=<PORT>,table=20,udp,nw_src=0.0.0.0,nw_dst=255.255.255.255,tp_src=68,tp_dst=67,priority=44000,actions=NORMAL
+    # in_port=<PORT>,table=20,udp,nw_src=0.0.0.0,nw_dst=255.255.255.255,\
+    #     tp_src=68,tp_dst=67,priority=44000,actions=NORMAL
     # in_port=<PORT>,table=20,icmp6,ipv6_src=::,icmp_type=133,priority=44000,actions=NORMAL
     # in_port=<PORT>,table=20,icmp6,ipv6_src=::,icmp_type=135,priority=44000,actions=NORMAL
     # in_port=<PORT>,table=20,ip,priority=40000,actions=drop
@@ -407,7 +404,8 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
     end
 
     # Following MAC-spoofing rules may be created:
-    # (if ARP Cache Poisoning) in_port=<PORT>,table=10,arp,dl_src=<MAC>,priority=50000,actions=resubmit(,20)
+    # (if ARP Cache Poisoning)
+    #     in_port=<PORT>,table=10,arp,dl_src=<MAC>,priority=50000,actions=resubmit(,20)
     # in_port=<PORT>,table=10,dl_src=<MAC>,priority=45000,actions=resubmit(,20)
     # in_port=<PORT>,table=10,priority=40000,actions=drop
     #
@@ -467,7 +465,7 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
     end
 
     def run(cmd)
-        OpenNebula.exec_and_log(cmd)
+        LocalCommand.run_sh(cmd)
     end
 
     def ports
@@ -485,36 +483,17 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
         end
     end
 
+    # rubocop:disable Style/FormatStringToken
+    # rubocop:disable Style/FormatString
+    # rubocop:disable Style/StringLiterals
     def port_note
         # dot separated hexadecimal VM_ID, NIC_ID twins,
         # e.g. for VM_ID=1, NIC_ID=1: "00.00.00.01.00.01"
         ("%08x%04x" % [@vm['ID'], @nic[:nic_id]]).gsub(/(..)(?=.)/, '\1.')
     end
-
-    def range?(range)
-        !range.to_s.match(/^\d+([,-]\d+)*$/).nil?
-    end
-
-    def expand_range(range)
-        items = []
-
-        range.split(',').each do |i|
-            l, r = i.split('-')
-
-            l = l.to_i
-            r = r.to_i unless r.nil?
-
-            if r.nil?
-                items << l
-            elsif r >= l
-                items.concat((l..r).to_a)
-            else
-                items.concat((r..l).to_a)
-            end
-        end
-
-        items.uniq.join(',')
-    end
+    # rubocop:enable Style/StringLiterals
+    # rubocop:enable Style/FormatString
+    # rubocop:enable Style/FormatStringToken
 
     private
 
@@ -560,18 +539,18 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
             @nic[:ovs_bridge_conf]['datapath_type'] = 'netdev'
         end
 
-        OpenNebula.exec_and_log("#{command(:ovs_vsctl)} --may-exist add-br #{@nic[:bridge]}")
+        LocalCommand.run_sh("#{command(:ovs_vsctl)} --may-exist add-br #{@nic[:bridge]}")
 
         set_bridge_options
 
         @bridges[@nic[:bridge]] = []
 
-        OpenNebula.exec_and_log("#{command(:ip)} link set #{@nic[:bridge]} up")
+        LocalCommand.run_sh("#{command(:ip)} link set #{@nic[:bridge]} up")
     end
 
     # Delete OvS bridge
     def delete_bridge
-        OpenNebula.exec_and_log("#{command(:ovs_vsctl)} del-br #{@nic[:bridge]}")
+        LocalCommand.run_sh("#{command(:ovs_vsctl)} --if-exists del-br #{@nic[:bridge]}")
 
         @bridges.delete(@nic[:bridge])
     end
@@ -587,17 +566,17 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
                        " options:vhost-server-path=#{dpdk_path}"
         end
 
-        OpenNebula.exec_and_log(ovs_cmd)
+        LocalCommand.run_sh(ovs_cmd)
 
         @bridges[@nic[:bridge]] << port
     end
 
     # Delete port from OvS bridge
     def del_bridge_port(port)
-        OpenNebula.exec_and_log("#{command(:ovs_vsctl)} --if-exists del-port " \
+        LocalCommand.run_sh("#{command(:ovs_vsctl)} --if-exists del-port " \
                                 "#{@nic[:bridge]} #{port}")
 
-        @bridges[@nic[:bridge]].delete(port)
+        @bridges[@nic[:bridge]]&.delete(port)
     end
 
     # Calls ovs-vsctl set bridge to set options stored in ovs_bridge_conf
@@ -606,7 +585,7 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
             cmd = "#{command(:ovs_vsctl)} set bridge " <<
                     "#{@nic[:bridge]} #{option}=#{value}"
 
-            OpenNebula.exec_and_log(cmd)
+            LocalCommand.run_sh(cmd)
         end
     end
 
@@ -629,9 +608,10 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
     end
 
     def validate_vlan_id
-        OpenNebula.log_error('VLAN ID validation not supported for OpenvSwitch, skipped.')
+        OpenNebula::DriverLogger.log_error('VLAN ID validation not supported for OpenvSwitch, skipped.')
     end
 
+    # rubocop:disable Naming/AccessorMethodName
     def set_vlan_limit(limit)
         vl = `#{command(:ovs_vsctl)} get Open_vSwitch . other_config:vlan-limit`
 
@@ -651,5 +631,6 @@ class OpenvSwitchVLAN < VNMMAD::VNMDriver
         cmd = "#{command(:ovs_appctl)} revalidator/purge"
         run cmd
     end
+    # rubocop:enable Naming/AccessorMethodName
 
 end

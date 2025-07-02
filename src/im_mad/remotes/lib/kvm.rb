@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -18,7 +18,10 @@
 
 require 'open3'
 require 'base64'
+require 'json'
+require 'yaml'
 require 'rexml/document'
+require 'sqlite3'
 
 require_relative 'process_list'
 require_relative 'domain'
@@ -41,12 +44,20 @@ module KVM
         :list     => 'virsh --connect LIBVIRT_URI --readonly list',
         :dumpxml  => 'virsh --connect LIBVIRT_URI --readonly dumpxml',
         :domstats => 'virsh --connect LIBVIRT_URI --readonly domstats',
+        :qemuga   => 'virsh --connect LIBVIRT_URI qemu-agent-command',
         :top      => 'top -b -d2 -n 2 -p ',
         'LIBVIRT_URI' => 'qemu:///system'
     }
 
+    QEMU_GA = {
+        :enabled => false,
+        :commands => {
+            :vm_qemu_ping => "one-$vm_id \'{\"execute\":\"guest-ping\"}\' --timeout 5"
+        }
+    }
+
     # Variables to read from kvmrc
-    CONF_VARS = %w[LIBVIRT_URI]
+    CONF_VARS = ['LIBVIRT_URI']
 
     # Execute a virsh command using the predefined command strings and URI
     # @param command [Symbol] as defined in the module CONF constant
@@ -71,6 +82,13 @@ module KVM
                 end
             end
         end
+
+        ga_conf_path = "#{__dir__}/../../etc/im/kvm-probes.d/guestagent.conf"
+        QEMU_GA.merge!(YAML.load_file(ga_conf_path))
+
+        QEMU_GA[:commands].each_key do |ga_info|
+            Domain::MONITOR_KEYS << ga_info
+        end
     rescue StandardError
     end
 
@@ -94,7 +112,7 @@ module ProcessList
             raise 'Error retrieving names. Check Libvirtd service is up.'
         end
 
-        lines = text.split(/\n/)[2..-1]
+        lines = text.split("\n")[2..-1]
 
         # rubocop:disable Style/RedundantAssignment
         names = lines.map do |line|
@@ -122,10 +140,26 @@ end
 #    @vm[:diskwrbytes]
 #    @vm[:diskrdiops]
 #    @vm[:diskwriops]
+#    @vm[ga_info] quemu guest agent information. symbols are dynamic based on guestagent.conf
 #
 #  This class uses the KVM and ProcessList interface
 #-------------------------------------------------------------------------------
 class Domain < BaseDomain
+
+    DB_PATH = '/var/tmp/one_db'
+
+    def initialize(name)
+        super(name)
+
+        @predictions = true
+
+        path = "#{__dir__}/../../etc/im/kvm-probes.d/forecast.conf"
+        conf = YAML.load_file(path)
+
+        @db_retention = Integer(conf['vm']['db_retention'])
+    rescue StandardError
+        @db_retention = 4
+    end
 
     # Gets the information of the domain, fills the @vm hash using ProcessList
     # and virsh dominfo
@@ -134,7 +168,7 @@ class Domain < BaseDomain
 
         return -1 if s.exitstatus != 0
 
-        lines = text.split(/\n/)
+        lines = text.split("\n")
         hash  = {}
 
         lines.map do |line|
@@ -154,6 +188,8 @@ class Domain < BaseDomain
         else
             @vm[:id] = -1
         end
+
+        return if @vm[:id] == -1 # Skip wild VMs
 
         @vm[:kvm_state] = hash['STATE']
 
@@ -178,6 +214,17 @@ class Domain < BaseDomain
         @vm[:state]  = state
         @vm[:reason] = reason
 
+        # VM system datastore path
+        xml, _e, s = KVM.virsh(:dumpxml, @name)
+
+        @vm[:system_datastore] = begin
+            doc = REXML::Document.new(xml)
+            doc.elements['/domain/metadata/one:vm/one:system_datastore']&.text
+        rescue 'StandardError'
+            nil
+        end if s.success?
+
+        ga_stats
         io_stats
     end
 
@@ -211,7 +258,7 @@ class Domain < BaseDomain
         vnc_txt = %(GRAPHICS = [ TYPE="vnc", PORT="#{vnc}" ]) if vnc
 
         features = []
-        %w[acpi apic pae].each do |feature|
+        ['acpi', 'apic', 'pae'].each do |feature|
             if REXML::XPath.first(doc, "/domain/features/#{feature}")
                 features << feature
             end
@@ -241,6 +288,22 @@ class Domain < BaseDomain
         ''
     end
 
+    # Compute forecast values for the VM metrics
+    def predictions
+        base = '/var/tmp/one/im/lib/python/prediction.sh'
+        cmd  = "#{base} --entity virtualmachine,#{@vm[:id]},#{@vm[:uuid]},#{DB_PATH}"
+
+        o, _e, s = Open3.capture3 cmd
+
+        if s.success?
+            o
+        else
+            ''
+        end
+    rescue StandardError
+        ''
+    end
+
     private
 
     # --------------------------------------------------------------------------
@@ -254,26 +317,26 @@ class Domain < BaseDomain
     #  * 'pmsuspended' suspended by guest power management (e.g. S3 state)
     # --------------------------------------------------------------------------
     STATE_MAP = {
-      'running'     => 'RUNNING',
-      'idle'        => 'RUNNING',
-      'blocked'     => 'RUNNING',
-      'in shutdown' => 'RUNNING',
-      'shutdown'    => 'RUNNING',
-      'dying'       => 'RUNNING',
-      'crashed'     => 'FAILURE',
-      'pmsuspended' => 'SUSPENDED',
-      'paused' => {
-          'migrating' => 'RUNNING',
-          'saving'    => 'RUNNING',
-          'starting up' => 'RUNNING',
-          'booted'    => 'RUNNING',
-          'I/O error' => 'FAILURE',
-          'watchdog'  => 'FAILURE',
-          'crashed'   => 'FAILURE',
-          'post-copy failed' => 'FAILURE',
-          'unknown'   => 'FAILURE',
-          'user'      => 'SUSPENDED'
-      }
+        'running'     => 'RUNNING',
+        'idle'        => 'RUNNING',
+        'blocked'     => 'RUNNING',
+        'in shutdown' => 'RUNNING',
+        'shutdown'    => 'RUNNING',
+        'dying'       => 'RUNNING',
+        'crashed'     => 'FAILURE',
+        'pmsuspended' => 'SUSPENDED',
+        'paused' => {
+            'migrating' => 'RUNNING',
+            'saving'    => 'RUNNING',
+            'starting up' => 'RUNNING',
+            'booted'    => 'RUNNING',
+            'I/O error' => 'FAILURE',
+            'watchdog'  => 'FAILURE',
+            'crashed'   => 'FAILURE',
+            'post-copy failed' => 'FAILURE',
+            'unknown'   => 'FAILURE',
+            'user'      => 'SUSPENDED'
+        }
     }
 
     # List of domain state reasons (for RUNNING) when to skip I/O monitoring
@@ -316,6 +379,38 @@ class Domain < BaseDomain
         end
     end
 
+    # Get OS metrics provided by the qemu guest agent
+    def ga_stats
+        ga_commands = KVM::QEMU_GA[:commands].transform_values do |ga_cmd|
+            ga_cmd.gsub('$vm_id', @vm[:id])
+        end
+
+        if KVM::QEMU_GA[:enabled]
+            ga_commands.each do |ga_info, ga_cmd|
+                text, e, s = KVM.virsh(:qemuga, ga_cmd)
+
+                if s.exitstatus != 0
+                    @vm[ga_info] = e.chomp
+                else
+                    begin
+                        info = JSON.parse(text)['return']
+
+                        info = info.join(', ') if info.is_a?(Array)
+                        info = info.to_s.gsub(/["\[\]]/) { |match| "\\#{match}" } if info.is_a?(Hash)
+
+                        @vm[ga_info] = info
+                    rescue JSON::ParserError => e
+                        @vm[ga_info] = "Failed to parse command output: #{e}"
+                    end
+                end
+            end
+        else
+            ga_commands.each_key do |ga_info|
+                @vm[ga_info] = 'QEMU Guest Agent monitoring disabled'
+            end
+        end
+    end
+
 end
 
 #-------------------------------------------------------------------------------
@@ -334,6 +429,7 @@ module DomainList
         domains = KVMDomains.new
 
         domains.info
+        domains.to_sql
         domains.to_monitor
     end
 
@@ -344,7 +440,7 @@ module DomainList
         domains.wilds_to_monitor
     end
 
-    def self.state_info(host, host_id)
+    def self.state_info(_host, _host_id)
         domains = KVMDomains.new
 
         domains.state_info

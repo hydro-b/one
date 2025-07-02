@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------- #
-# Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                #
+# Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                #
 #                                                                            #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may    #
 # not use this file except in compliance with the License. You may obtain    #
@@ -58,14 +58,14 @@ module VNMMAD
         # @param [String] hypervisor (e.g. 'kvm' ...)
         # @param [String] Xpath for the NICs using the SG driver
         def initialize(vm_64, xpath_filter = nil, deploy_id = nil, bridged = true)
-            @locking = true
-
             @bridged = bridged
 
             vm = Base64.decode64(vm_64)
 
             xpath_filter ||= XPATH_FILTER
             super(vm, xpath_filter, deploy_id)
+
+            @locking = true
 
             @commands = VNMNetwork::Commands.new
 

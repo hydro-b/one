@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------- *
- * Copyright 2002-2023, OpenNebula Project, OpenNebula Systems               *
+ * Copyright 2002-2025, OpenNebula Project, OpenNebula Systems               *
  *                                                                           *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may   *
  * not use this file except in compliance with the License. You may obtain   *
@@ -35,13 +35,13 @@ class JWTError extends OpenNebulaError {
   }
 }
 
-class MissingRemoteHeaderError extends OpenNebulaError {
+class MissingHeaderError extends OpenNebulaError {
   /**
    * @param {string} headers - error message description.
    */
   constructor(headers = '') {
-    super(`missing header: ${defaultHeaderRemote.join()} in ${headers}`)
-    this.name = 'MissingRemoteHeaderError'
+    super(`Missing Header: ${defaultHeaderRemote.join()} in ${headers}`)
+    this.name = 'MissingHeaderError'
   }
 }
 
@@ -55,9 +55,20 @@ class MissingFireEdgeKeyError extends OpenNebulaError {
   }
 }
 
+class InternalLoginError extends OpenNebulaError {
+  /**
+   *
+   */
+  constructor() {
+    super('Internal Login Error')
+    this.name = 'InternalLoginError'
+  }
+}
+
 module.exports = {
   JWTError,
   MissingFireEdgeKeyError,
   OpenNebulaError,
-  MissingRemoteHeaderError,
+  MissingHeaderError,
+  InternalLoginError,
 }

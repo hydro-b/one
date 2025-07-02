@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -123,7 +123,7 @@ private:
      *    @param error string describing the error if any
      *    @return 0 on success
      */
-    int post_update_template(std::string& error) override;
+    int post_update_template(std::string& error, Template *_obj_tmpl) override;
 
     // -------------------------------------------------------------------------
     // Hook Attributes

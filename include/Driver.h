@@ -1,5 +1,5 @@
 /* -------------------------------------------------------------------------- */
-/* Copyright 2002-2023, OpenNebula Project, OpenNebula Systems                */
+/* Copyright 2002-2025, OpenNebula Project, OpenNebula Systems                */
 /*                                                                            */
 /* Licensed under the Apache License, Version 2.0 (the "License"); you may    */
 /* not use this file except in compliance with the License. You may obtain    */
@@ -42,7 +42,6 @@ public:
      *  A call to the start() method is needed to start the driver
      *    @param c the command to execute the driver
      *    @param a the arguments for the command
-     *    @param th true to execute driver action in a thread
      *    @param ct max number of concurrent threads
      */
     Driver(const std::string& c, const std::string& a, int ct)
@@ -115,6 +114,14 @@ public:
         streamer.register_action(t, a);
     };
 
+    /**
+     *  Set a callback to be called when the driver is restarted and reconnects
+     */
+    void set_reconnect_callback(std::function<void()> callback)
+    {
+        reconnect_callback = callback;
+    }
+
 protected:
     Driver() = default;
 
@@ -160,6 +167,11 @@ private:
      *  sync listner thread termination
      */
     std::atomic<bool> terminate = {false};
+
+    /**
+     *  Reconnect callback, called when the driver restarts
+     */
+    std::function<void()> reconnect_callback;
 
     /**
      *  Starts the driver. This function creates a new process and sets up the
@@ -314,6 +326,12 @@ int Driver<MSG>
 
     rc = read(from_drv, (void *) buffer, sizeof(char) * 31);
 
+    if ( rc < 0 )
+    {
+        error = "Driver initialization failed, unable to read from driver\n";
+        return -1;
+    }
+
     buffer[rc]='\0';
 
     std::istringstream iss(buffer);
@@ -325,7 +343,7 @@ int Driver<MSG>
 
     if ( action != "INIT" || result != "SUCCESS" )
     {
-        error = "Driver initialization failed\n";
+        error = "Driver initialization failed, expected INIT SUCCESS message\n";
         return -1;
     }
 
@@ -352,6 +370,8 @@ void Driver<MSG>
             start_driver(error);
 
             streamer.fd(from_drv);
+
+            if (reconnect_callback) reconnect_callback();
         }
     });
 }
